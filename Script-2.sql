@@ -234,7 +234,7 @@ select count(*) from lot_information_gn lig where lig.pnu in (select distinct pn
 
 select * from busok_pnu bp where bp.pnu in (select distinct pnu_gen from busok_pnu bp2 ); --표제부 pnu중에서 부속 pnu에 같은 값이 있는 것들 104개
 select count(*) from busok_pnu bp where bp.pnu not in (select distinct pnu_gen from busok_pnu bp2 ); --표제부 pnu중에서 부속 pnu에 같은 값이 없는 것들 5141 => select!!!!! 1차로 
-select * from busok_pnu bp where pnu_gen='1168010400101340015';--뭔가 이상한데? 건축물대장 api에서 주소가 잘못 되어있음... 청담동 133-3 번지 부속건축물대장 api에서 가져오면 옆에 134번지쪽에 상가 부속건축물 정보가 뜸,,,
+select * from busok_pnu bp where pnu_gen='1168010400101340015';--뭔가 이상한데? 건축물대장 api에서 주소가 잘못 되어있음... 청담동 133-3 번지 부속건축물대장 api에서 가져오면 옆에 134번지쪽에 상가와 아파트 부속건축물 정보가 뜸,,,
 
 select * from busok_pnu bp;
 select * from building_pyojebu_gn bpg where pnu='1168010500100730000';
@@ -244,6 +244,35 @@ select * from (select count(distinct bp.pnu) cnt,array_agg(distinct bp.pnu),coun
 
 select bp.pnu,array_agg(bp.mgm_bldrgst_pk),count(distinct bp.pnu_gen),array_agg(distinct bp.pnu_gen),array_cat(array_agg(distinct bp.pnu),array_agg(distinct bp.pnu_gen)) from busok_pnu bp where bp.pnu not in (select distinct pnu_gen from busok_pnu bp2) group by bp.pnu, bp.mgm_bldrgst_pk;
 
-create view pnu_bpk_busok as select bp.pnu pnu_main, array_agg(distinct bp.mgm_bldrgst_pk) bpks, count(distinct bp.pnu_gen) bpnu_length, array_cat(array_agg(distinct bp.pnu),array_agg(distinct bp.pnu_gen)) bpnus from busok_pnu bp where bp.pnu not in (select distinct pnu_gen from busok_pnu bp2) group by bp.pnu, bp.mgm_bldrgst_pk;
-select count(*) from pnu_bpk_busok;
-select pnu,bpks,unnest(bpnus) from pnu_bpk_busok;
+create view pnu_bpk_busok as select bp.pnu pnu_main, array_agg(distinct bp.mgm_bldrgst_pk) bpks, count(distinct bp.pnu_gen) bpnu_length, array_cat(array_agg(distinct bp.pnu),array_agg(distinct bp.pnu_gen)) bpnus from busok_pnu bp where bp.pnu not in (select distinct pnu_gen from busok_pnu bp2) group by bp.pnu;
+select count(*) from pnu_bpk_busok; --1744
+
+create view bpk_busok as select array_agg(distinct bp.pnu) pnu_main, array_agg(distinct bp.mgm_bldrgst_pk) bpks, count(distinct bp.pnu_gen) bpnu_length, array_cat(array_agg(distinct bp.pnu),array_agg(distinct bp.pnu_gen)) bpnus from busok_pnu bp where bp.pnu not in (select distinct pnu_gen from busok_pnu bp2) group by bp.mgm_bldrgst_pk;
+select array_length(pnu_main,1) from bpk_busok bb;
+select count(*) from (select a.pnu, array_agg(a.bpks), array_agg(a.bpnus) from (select unnest(bb.pnu_main) pnu, * from bpk_busok bb) a group by a.pnu) t; --1744
+
+select count(distinct pnu_main) from pnu_bpk_busok; --1744
+select pnu_main, bpks, unnest(bpnus) from pnu_bpk_busok;
+select * from pnu_bpk_busok pbb;
+
+select count(*) from (select distinct unnest(bpnus) from pnu_bpk_busok) tt; --4682
+select count(*) from (select unnest(bpnus) from pnu_bpk_busok) tt; --4684
+select cnt, bpnu from (select count(tmp.pnu_main) cnt, tmp.bpnu from (select unnest(pbb.bpnus) bpnu, *, (select st_collect from pols_by_main_pnu pbmp where pbmp.pnu_main=pbb.pnu_main) from pnu_bpk_busok pbb) tmp group by tmp.bpnu) tmp2 where cnt>1; --2개
+--select tt.bpnu from (select distinct unnest(bpnus) bpnu from pnu_bpk_busok) tt;
+select *, (select st_collect from pols_by_main_pnu pbmp where pbmp.pnu_main=tt.pnu_main) from (select distinct unnest(bpnus) bpnu, * from pnu_bpk_busok) tt where bpnu in ('1168010300111840025','1168011800101080000');
+select * from building_busok_gn bbg where atch_bjd_cd=11800 and atch_bun=108;
+select * from building_busok_gn bbg2 where bbg2.mgm_bldrgst_pk in (select mgm_bldrgst_pk from building_busok_gn bbg where atch_bjd_cd=11800 and atch_bun=108) and bbg2.atch_bun=108;
+
+-- main 땅 pnu마다 폴리곤 union 만들기 -> 합쳐서 하나로 만들어버림,,
+select st_union( (select array_agg(geom) from pol_seoul_lands_gn pslg where pslg.pnu in (select unnest(bpnus) from pnu_bpk_busok where pnu_main='1168010100106230003') ) );
+
+-- main 땅 pnu마다 폴리곤 collection? => ok
+select st_collect( (select array_agg(geom) from pol_seoul_lands_gn pslg where pslg.pnu in (select unnest(bpnus) from pnu_bpk_busok where pnu_main='1168010100106230003') ) );
+select pbb.pnu_main, pbb.bpks, st_collect( (select array_agg(geom) from pol_seoul_lands_gn pslg where pslg.pnu in (select unnest(pbb2.bpnus) from pnu_bpk_busok pbb2 where pbb2.pnu_main=pbb.pnu_main) ) ) from pnu_bpk_busok pbb;
+
+create materialized view pols_by_main_pnu 
+as select pbb.pnu_main, pbb.bpks, st_collect( (select array_agg(geom) from pol_seoul_lands_gn pslg where pslg.pnu in (select unnest(pbb2.bpnus) from pnu_bpk_busok pbb2 where pbb2.pnu_main=pbb.pnu_main) ) ) from pnu_bpk_busok pbb
+with data;
+
+
+
