@@ -275,4 +275,47 @@ as select pbb.pnu_main, pbb.bpks, st_collect( (select array_agg(geom) from pol_s
 with data;
 
 
+--select st_astext(st_collect), (select sum(area) from lot_information_gn li where li.pnu in ((select bpnus from pnu_bpk_busok2 pbb where pbb.pnu_main = pbmp.pnu_main)))) area from pols_by_main_pnu2 pbmp where pnu_main = (select pnu_main from busok_main_pnu_map where bpnu='1168010600109460010' limit 1);
 
+-- 강남구 pnu마다 엮인 토지 있으면 합산면적 구하기 0217
+select pnu, area, coalesce( 
+(select sum(lig2.area) from lot_information_gn lig2 where lig2.pnu in (select unnest(pbb.bpnus) from pnu_bpk_busok2 pbb where pbb.pnu_main = (select bmpm.pnu_main from busok_main_pnu_map bmpm where bmpm.bpnu = lig.pnu limit 1))),
+(select sum(lig2.area) from lot_information_gn lig2 where lig2.pnu in (select unnest(pbb.bpnus) from pnu_bpk_busok2 pbb where pbb.pnu_main = (select pbmp.pnu_main from pols_by_main_pnu2 pbmp where pbmp.pnu_main = lig.pnu))), 
+area) area_total from lot_information_gn lig;-- 1000개 약 12~20 초 정도? 넘 오래걸림 
+
+create materialized view lot_information_gn_mat as select * from lot_information_gn with data;
+create materialized view pnu_bpk_busok2_mat as select * from pnu_bpk_busok2 with data;
+create index idx_bmpm on busok_main_pnu_map(bpnu);
+create index idx_pbmp on pols_by_main_pnu2(pnu_main);
+create index idx_lot_pnu on lot_information_gn_mat(pnu);
+create index idx_pbb on pnu_bpk_busok2_mat(pnu_main);
+-- 인덱스 작성  
+
+select pnu, area, coalesce( 
+(select sum(lig2.area) from lot_information_gn_mat lig2 where lig2.pnu in (select unnest(pbb.bpnus) from pnu_bpk_busok2_mat pbb where pbb.pnu_main = (select bmpm.pnu_main from busok_main_pnu_map bmpm where bmpm.bpnu = lig.pnu limit 1))),
+(select sum(lig2.area) from lot_information_gn_mat lig2 where lig2.pnu in (select unnest(pbb.bpnus) from pnu_bpk_busok2_mat pbb where pbb.pnu_main = (select pbmp.pnu_main from pols_by_main_pnu2 pbmp where pbmp.pnu_main = lig.pnu))), 
+area) area_total from lot_information_gn lig;-- 1000개 412ms,, good
+
+create materialized view pnu_area_total_gn as select pnu, area, coalesce( 
+(select sum(lig2.area) from lot_information_gn_mat lig2 where lig2.pnu in (select unnest(pbb.bpnus) from pnu_bpk_busok2_mat pbb where pbb.pnu_main = (select bmpm.pnu_main from busok_main_pnu_map bmpm where bmpm.bpnu = lig.pnu limit 1))),
+(select sum(lig2.area) from lot_information_gn_mat lig2 where lig2.pnu in (select unnest(pbb.bpnus) from pnu_bpk_busok2_mat pbb where pbb.pnu_main = (select pbmp.pnu_main from pols_by_main_pnu2 pbmp where pbmp.pnu_main = lig.pnu))), 
+area) area_total from lot_information_gn lig with data;
+
+select *, coalesce( 
+(select text(pbb.bpnus) from pnu_bpk_busok2_mat pbb where pbb.pnu_main = (select bmpm.pnu_main from busok_main_pnu_map bmpm where bmpm.bpnu = patg.pnu limit 1)),
+(select text(pbb.bpnus) from pnu_bpk_busok2_mat pbb where pbb.pnu_main = (select pbmp.pnu_main from pols_by_main_pnu2 pbmp where pbmp.pnu_main = patg.pnu)),
+'') from pnu_area_total_gn patg; -- 엮인 토지 합산면적 + pnu 리스트 
+
+-- 용도지역 분류하기 
+CREATE INDEX pol_sgg_bounds_idx ON pol_sgg_bounds USING GIST(geom);
+CREATE INDEX pol_landuse_living_idx ON pol_landuse_living USING GIST(geom);
+CREATE INDEX pol_landuse_comm_idx ON pol_landuse_comm USING GIST(geom);
+CREATE INDEX pol_landuse_nature_idx ON pol_landuse_nature USING GIST(geom);
+
+create view pol_landuse_living_gn as select * from pol_landuse_living pll where st_intersects( pll.geom, (select psb.geom from pol_sgg_bounds psb where "SGG_NM" = '강남구') );
+create view pol_landuse_comm_gn as select * from pol_landuse_comm pll where st_intersects( pll.geom, (select psb.geom from pol_sgg_bounds psb where "SGG_NM" = '강남구') );
+create view pol_landuse_nature_gn as select * from pol_landuse_nature pll where st_intersects( pll.geom, (select psb.geom from pol_sgg_bounds psb where "SGG_NM" = '강남구') );
+
+select * from pol_landuse_living_gn pllg where "LABEL" != "ENT_NAME" ;
+select lb, ( select st_collect( (select array_agg(geom) from pol_landuse_living_gn pllg where pllg."LABEL"=lb) ) ) from (select distinct "LABEL" lb from pol_landuse_living_gn) lbs;
+select st_collect( (select array_agg(geom) from pol_landuse_living_gn pllg ) )
