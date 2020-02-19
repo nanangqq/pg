@@ -306,6 +306,9 @@ select *, coalesce(
 (select text(pbb.bpnus) from pnu_bpk_busok2_mat pbb where pbb.pnu_main = (select pbmp.pnu_main from pols_by_main_pnu2 pbmp where pbmp.pnu_main = patg.pnu)),
 '') from pnu_area_total_gn patg; -- 엮인 토지 합산면적 + pnu 리스트 
 
+-- 동 경계 
+select * from pol_dong_bounds pdb where "EMD_NM" ='역삼동';
+
 -- 용도지역 분류하기 
 CREATE INDEX pol_sgg_bounds_idx ON pol_sgg_bounds USING GIST(geom);
 CREATE INDEX pol_landuse_living_idx ON pol_landuse_living USING GIST(geom);
@@ -317,5 +320,93 @@ create view pol_landuse_comm_gn as select * from pol_landuse_comm pll where st_i
 create view pol_landuse_nature_gn as select * from pol_landuse_nature pll where st_intersects( pll.geom, (select psb.geom from pol_sgg_bounds psb where "SGG_NM" = '강남구') );
 
 select * from pol_landuse_living_gn pllg where "LABEL" != "ENT_NAME" ;
-select lb, ( select st_collect( (select array_agg(geom) from pol_landuse_living_gn pllg where pllg."LABEL"=lb) ) ) from (select distinct "LABEL" lb from pol_landuse_living_gn) lbs;
-select st_collect( (select array_agg(geom) from pol_landuse_living_gn pllg ) )
+select * from pol_landuse_living_gn pllg where "ENT_NAME"='제2종일반주거지역(12층)' ;
+select * from pol_landuse_living_gn pllg where "LABEL"='제2종일반주거지역(12층)' ;
+select lb, ( select st_collect( (select array_agg(geom) from pol_landuse_living_gn pllg where pllg."ENT_NAME"=lb) ) ) from (select distinct "ENT_NAME" lb from pol_landuse_living_gn) lbs;
+select st_collect( (select array_agg(geom) from pol_landuse_living_gn pllg ) );
+select lb, ( select st_collect( (select array_agg(geom) from pol_landuse_comm_gn plcg where plcg."ENT_NAME"=lb) ) ) from (select distinct "ENT_NAME" lb from pol_landuse_comm_gn) lbs;
+
+create materialized view landuse_unions as 
+select lb, ( select st_union( (select array_agg(geom) from pol_landuse_living_gn pllg where pllg."ENT_NAME"=lb) ) ) from (select distinct "ENT_NAME" lb from pol_landuse_living_gn) lbs
+union 
+select lb, ( select st_union( (select array_agg(geom) from pol_landuse_comm_gn plcg where plcg."ENT_NAME"=lb) ) ) from (select distinct "ENT_NAME" lb from pol_landuse_comm_gn) lbs
+union 
+select lb, ( select st_union( (select array_agg(geom) from pol_landuse_nature_gn plng where plng."ENT_NAME"=lb) ) ) from (select distinct "ENT_NAME" lb from pol_landuse_nature_gn) lbs;
+
+select * from pol_seoul_lands_gn pslg where st_intersects( pslg.geom, (select lc.st_union from landuse_unions lc where lc.lb='제1종일반주거지역') );
+
+select * from pol_seoul_lands_gn_mat pslg where (select count(*) from landuse_unions lu where st_intersects( pslg.geom, lu.st_union ) ) > 1; -- 그냥하니 오래걸림,,, -> lauduse_union 인덱스 거니 36초,, (1000row)
+select count(*) from pol_seoul_lands_gn_mat pslg where (select count(*) from landuse_unions lu where st_intersects( pslg.geom, lu.st_union ) ) > 1; -- 6327개,, -> 3분 30
+create index lauduse_union_idx on landuse_unions using gist(st_union);
+create index lauduse_union_lb_idx on landuse_unions(lb);
+create materialized view pol_seoul_lands_gn_mat as select * from pol_seoul_lands_gn with data;
+CREATE INDEX pol_seoul_lands_gn_idx ON pol_seoul_lands_gn_mat USING GIST(geom);
+
+select st_area( st_intersection( geom, (select st_union from landuse_unions lu where lu.lb='제1종일반주거지역') ), true), (select area from lot_information_gn_mat ligm where ligm.pnu=pslgm.pnu) from pol_seoul_lands_gn_mat pslgm;
+
+drop function get_landuse_ints;
+create or replace FUNCTION get_landuse_ints(
+geom geometry,
+lu text) 
+RETURNS float
+AS $$
+q = plpy.prepare("select st_area( st_intersection( st_makevalid($1), (select st_union from landuse_unions lu where lu.lb=$2) ), true)", ['geometry', 'text'])
+try:
+	area = q.execute([geom, lu], 1)[0]['st_area']
+except:
+	area = -1
+return area
+$$ LANGUAGE plpython3u
+IMMUTABLE
+RETURNS NULL ON NULL INPUT; --plpy.execute(""%pnu_gen)[0]['count']
+
+select 
+pslgm.pnu,
+get_landuse_ints(geom, '일반상업지역') ilsang,
+get_landuse_ints(geom, '제1종일반주거지역') ilju_1,
+get_landuse_ints(geom, '제1종전용주거지역') jnju_1,
+get_landuse_ints(geom, '제2종일반주거지역') ilju_2,
+get_landuse_ints(geom, '제2종일반주거지역(7층이하)') ilju_2_und7,
+get_landuse_ints(geom, '제3종일반주거지역') ilju_3,
+get_landuse_ints(geom, '준주거지역') semiju,
+get_landuse_ints(geom, '생산녹지지역') pd_green,
+get_landuse_ints(geom, '자연녹지지역') nt_green,
+get_landuse_ints(geom, '도시계획 시설') ubp_fc,
+st_area(geom, true), 
+(select area from lot_information_gn_mat ligm where ligm.pnu=pslgm.pnu) 
+from pol_seoul_lands_gn_mat pslgm ; -- 용도지역별로 겹치는 영역 면적 계산 
+
+create materialized view lu_areas_gn_lands as 
+select 
+pslgm.pnu,
+get_landuse_ints(geom, '일반상업지역') ilsang,
+get_landuse_ints(geom, '제1종일반주거지역') ilju_1,
+get_landuse_ints(geom, '제1종전용주거지역') jnju_1,
+get_landuse_ints(geom, '제2종일반주거지역') ilju_2,
+get_landuse_ints(geom, '제2종일반주거지역(7층이하)') ilju_2_und7,
+get_landuse_ints(geom, '제3종일반주거지역') ilju_3,
+get_landuse_ints(geom, '준주거지역') semiju,
+get_landuse_ints(geom, '생산녹지지역') pd_green,
+get_landuse_ints(geom, '자연녹지지역') nt_green,
+get_landuse_ints(geom, '도시계획 시설') ubp_fc,
+st_area(geom, true), 
+(select area from lot_information_gn_mat ligm where ligm.pnu=pslgm.pnu) 
+--from pol_seoul_lands_gn_mat pslgm where not st_isvalid(geom) -- st_isvalid 로 나온 애들은 오히려 별 문제 없이 됨,,
+from pol_seoul_lands_gn_mat pslgm 
+with data; -- get_landuse_ints 함수에서 st_intersection에러뜨면 면적 -1 리턴하는 것으로 수정,,
+
+select * from pol_seoul_lands_gn_mat pslgm where not st_isvalid(geom); --15개 정도 invalid...
+
+select array[sum(ilsang), sum(ilju_1)] from lu_areas_gn_lands lagl where ilju_3 =-1;
+select * from lu_areas_gn_lands lagl2 where pnu='1168010600109500005';
+select * from lu_areas_gn_lands lagl2 where ubp_fc>0;
+select * from lu_areas_gn_lands lagl where ubp_fc =-1; -- 3종 일반주거 말고는 에러뜬것 없음,,, 전체 면적에서 빼거나 하는 식으로 수정해주면 될듯
+
+select *, st_area-(ilsang + ilju_1 + ilju_2 + ilju_2_und7 + semiju + jnju_1 + pd_green + nt_green + ubp_fc) from lu_areas_gn_lands lagl where ilju_3 =-1;
+create table lu_areas_gn_lands_bu as (select * from lu_areas_gn_lands);
+update lu_areas_gn_lands_bu set ilju_3=st_area-(ilsang + ilju_1 + ilju_2 + ilju_2_und7 + semiju + jnju_1 + pd_green + nt_green + ubp_fc) where ilju_3 = -1;
+select * from lu_areas_gn_lands_bu where pnu in (select pnu from lu_areas_gn_lands lagl where ilju_3 =-1);
+update lu_areas_gn_lands_bu set ilju_3=0 where ilju_3 < 0;
+
+create index lu_areas_gn_lands_bu_pnu_idx on lu_areas_gn_lands_bu(pnu);
+
