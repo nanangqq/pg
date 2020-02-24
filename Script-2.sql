@@ -403,10 +403,31 @@ select * from lu_areas_gn_lands lagl2 where ubp_fc>0;
 select * from lu_areas_gn_lands lagl where ubp_fc =-1; -- 3종 일반주거 말고는 에러뜬것 없음,,, 전체 면적에서 빼거나 하는 식으로 수정해주면 될듯
 
 select *, st_area-(ilsang + ilju_1 + ilju_2 + ilju_2_und7 + semiju + jnju_1 + pd_green + nt_green + ubp_fc) from lu_areas_gn_lands lagl where ilju_3 =-1;
-create table lu_areas_gn_lands_bu as (select * from lu_areas_gn_lands);
+create table lu_areas_gn_lands_bu as (select * from lu_areas_gn_lands); -- update 전에 backup table 생성 
 update lu_areas_gn_lands_bu set ilju_3=st_area-(ilsang + ilju_1 + ilju_2 + ilju_2_und7 + semiju + jnju_1 + pd_green + nt_green + ubp_fc) where ilju_3 = -1;
 select * from lu_areas_gn_lands_bu where pnu in (select pnu from lu_areas_gn_lands lagl where ilju_3 =-1);
-update lu_areas_gn_lands_bu set ilju_3=0 where ilju_3 < 0;
+update lu_areas_gn_lands_bu set ilju_3=0 where ilju_3 < 0; -- update 후에 table 그냥 사용하기로,, 일단 
 
 create index lu_areas_gn_lands_bu_pnu_idx on lu_areas_gn_lands_bu(pnu);
 
+select distinct use_nm from building_floor bf ;
+
+create index pub_price_pnu_idx on pub_price_gn_lands(pnu);
+
+select count(*) from lu_areas_gn_lands_bu laglb ;
+select count(*) from pub_price_gn_lands ppgl ;
+
+select count(ilsang*(select "JIGA" from pub_price_gn_lands ppgl where ppgl.pnu=lagl.pnu)) from lu_areas_gn_lands lagl where (select "JIGA" from pub_price_gn_lands ppgl where ppgl.pnu=lagl.pnu) isnull; -- null 인 행은 카운트 안됨,,
+select count(ilsang*(select "JIGA" from pub_price_gn_lands ppgl where ppgl.pnu=lagl.pnu)) from lu_areas_gn_lands lagl where (select "JIGA" from pub_price_gn_lands ppgl where ppgl.pnu=lagl.pnu) notnull;
+select count(ilsang*(select "JIGA" from pub_price_gn_lands ppgl where ppgl.pnu=lagl.pnu)) from lu_areas_gn_lands lagl ;
+select ilsang*(select "JIGA" from pub_price_gn_lands ppgl where ppgl.pnu=lagl.pnu) from lu_areas_gn_lands lagl ; -- 34767 rows
+
+select *, (select "JIGA" from pub_price_gn_lands ppgl where ppgl.pnu=lagl.pnu) from lu_areas_gn_lands lagl ; --> python 으로,, 
+
+select st_area("geom", true) from pol_sgg_bounds psb where "SGG_NM" = '강남구';
+
+select sum(gf_ar) from building_pyojebu_gn bpg ;
+
+select sum(area) from building_floor bf where sgg_cd = 11680 ;
+
+select geom from pol_gwang_bounds_sim pgbs where st_intersects(st_geometryfromtext('POINT(126.8754483 37.6543926)',4326), geom );
