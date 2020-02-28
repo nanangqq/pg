@@ -215,3 +215,13 @@ pnu_generate_py(atch_sgg_cd, atch_bjd_cd, atch_bun, atch_ji, 1),
 from building_busok_gn bbg 
 where bbg.pnu in (select pnu from building_pyojebu_gn bpg where bpg.etclot_cnt > 0) ) tt 
 where cnt=1;
+
+-- avg price
+update pol_gwang_bounds_sim
+set avg_pub_price = (select 
+sum(
+"PNILP"*(select area from jijuk_46 jj where jj."PNU"=pp."PNU" )
+)/sum(
+(select area from jijuk_46 jj where jj."PNU"=pp."PNU" )
+) from pub_price_46 pp)
+where ctprvn_cd='46';

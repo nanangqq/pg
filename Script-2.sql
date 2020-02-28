@@ -431,3 +431,55 @@ select sum(gf_ar) from building_pyojebu_gn bpg ;
 select sum(area) from building_floor bf where sgg_cd = 11680 ;
 
 select geom from pol_gwang_bounds_sim pgbs where st_intersects(st_geometryfromtext('POINT(126.8754483 37.6543926)',4326), geom );
+
+-- 구역별 평균 공시지가
+
+
+update pol_gwang_bounds_sim set avg_pub_price = (select avg("PNILP") from pub_price_seoul pps) where ctprvn_cd = '11'; -- 걍 평균 
+update pol_gwang_bounds_sim set avg_pub_price = (select sum("PNILP"*(select li.area from lot_information li where li.pnu=pps."PNU"))/sum((select li.area from lot_information li where li.pnu=pps."PNU")) from pub_price_seoul pps) where ctprvn_cd = '11'; -- 면적 가중 평균 
+select psb."SGG_NM" ,(select avg("PNILP") from pub_price_seoul pps where "COL_ADM_SECT_CD" = psb."COL_ADM_SE") from pol_sgg_bounds psb ; -- 걍 평균 
+select psb."SGG_NM" ,(select sum("PNILP"*(select li.area from lot_information li where li.pnu=pps."PNU"))/sum((select li.area from lot_information li where li.pnu=pps."PNU")) from pub_price_seoul pps where "COL_ADM_SECT_CD" = psb."COL_ADM_SE") from pol_sgg_bounds psb ;--면적가중평균 
+update pol_sgg_bounds psb set avg_pub_price = (select sum("PNILP"*(select li.area from lot_information li where li.pnu=pps."PNU"))/sum((select li.area from lot_information li where li.pnu=pps."PNU")) from pub_price_seoul pps where pps."COL_ADM_SECT_CD" = psb."COL_ADM_SE");--면적가중평균 
+
+select substring("PNU",1,8) from pub_price_seoul pps ;
+select (select avg("PNILP") from pub_price_seoul pps where substring(pps."PNU",1,8)=pdb."EMD_CD" ) from pol_dong_bounds pdb ;
+create index pps_pnu_idx on pub_price_seoul("PNU");
+update pol_dong_bounds pdb set avg_pub_price = (select sum("PNILP"*(select li.area from lot_information li where li.pnu=pps."PNU"))/sum((select li.area from lot_information li where li.pnu=pps."PNU")) from pub_price_seoul pps where substring(pps."PNU",1,8)=pdb."EMD_CD" );
+
+-- 옮기기용 테이블 작성 from views
+create table _pol_seoul_lands_gn as select * from pol_seoul_lands_gn ;
+
+-- office db start
+
+REFRESH MATERIALIZED view busok_main_pnu_map ;
+REFRESH MATERIALIZED view lu_areas_gn_lands ;
+REFRESH MATERIALIZED view pnu_bpk_busok2_mat ;
+REFRESH MATERIALIZED view pols_by_main_pnu2 ;
+REFRESH MATERIALIZED view pnu_area_total_gn ;
+REFRESH MATERIALIZED view pnu_main_comb_map ;
+-- dump 파일 로드하면서 mat view 관련 에러 몇개 뜸 => refresh materialized view 명령으로 복구 가능,,,
+
+create index aaa on building_floor(mgm_bldrgst_pk);
+select count(distinct mgm_bldrgst_pk) from building_floor bf where pnu/100000000000000=11680;
+
+select pnu/100000000000000 from building_floor bf limit 100;
+
+-- avg pub price(area weighted) by gwang
+select sum("PNILP"*(select area from jijuk_26 jj where jj."PNU"=pp."PNU" ))/sum((select area from jijuk_26 jj where jj."PNU"=pp."PNU" )) from pub_price_26 pp limit 10;
+select sum("PNILP"*(select area from jijuk_26 jj where jj."PNU"=pp."PNU" )) from pub_price_26 pp limit 10;
+select sum(ap) from (select "PNILP"*(select area from jijuk_26 jj where jj."PNU"=pp."PNU" ) ap from pub_price_26 pp limit 10) t;
+
+update pol_gwang_bounds_sim set avg_pub_price = (select sum("PNILP"*(select area from jijuk_26 jj where jj."PNU"=pp."PNU" ))/sum((select area from jijuk_26 jj where jj."PNU"=pp."PNU" )) from pub_price_26 pp)
+where ctprvn_cd = '26';
+
+select count(*) from pub_price_27 pp ;
+
+-- avg price
+update pol_gwang_bounds_sim
+set avg_pub_price = (select 
+sum(
+"PNILP"*(select area from jijuk_47 jj where jj."PNU"=pp."PNU" )
+)/sum(
+(select area from jijuk_47 jj where jj."PNU"=pp."PNU" )
+) from pub_price_47 pp)
+where ctprvn_cd='47';
