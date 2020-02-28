@@ -42,8 +42,8 @@ select count(*) from pol_seoul_lands_gn pslg where st_intersects(geom, st_envelo
 select pnu, st_asgeojson(geom)::jsonb from pol_seoul_lands_gn pslg where st_intersects(geom, st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.0754445 37.5128137)', 4326)) );
 select json_build_object(
     'type', 'FeatureCollection',
-    'features', json_agg(ST_AsGeoJSON(t.*)::json)
-    )
+    'features', jsonb_agg(ST_AsGeoJSON(t.*)::jsonb)
+    )::jsonb
 from ( values (1, 'one', 'POINT(1 1)'::geometry),
               (2, 'two', 'POINT(2 2)'),
               (3, 'three', 'POINT(3 3)')
@@ -51,7 +51,8 @@ from ( values (1, 'one', 'POINT(1 1)'::geometry),
 ( values (1, 'one', 'POINT(1 1)'::geometry),
               (2, 'two', 'POINT(2 2)'),
               (3, 'three', 'POINT(3 3)')
-     );
+);
+
 select st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.0754445 37.5128137)', 4326));
 
 -- 30m -> 414개 토지 
@@ -62,6 +63,11 @@ select st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.07
 --x: 127.0590348
 --y: 37.5044263
 select count(*) from pol_seoul_lands_gn pslg where st_intersects(geom, st_envelope(st_geometryfromtext('LINESTRING(127.0667703 37.509435,127.0590348 37.5044263)', 4326)) );
+select jsonb_build_object(
+'type', 'FeatureCollection',
+'features', jsonb_agg(ST_AsGeoJSON(t.*)::jsonb)
+)::jsonb
+from (select pnu, geom from pol_seoul_lands_gn pslg where st_intersects( geom, st_envelope(st_geometryfromtext('LINESTRING(127.0667703 37.509435,127.0590348 37.5044263)', 4326)) )) as t(pnu, geom);
 select st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.0754445 37.5128137)', 4326));
 
 -- 20m -> 128개 토지 
