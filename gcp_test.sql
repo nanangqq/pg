@@ -1,5 +1,5 @@
-create extension plpython3u; -- 지원 안합
-CREATE EXTENSION postgis; -- 설치 가능
+create extension plpython3u; -- 吏��썝 �븞�빀
+CREATE EXTENSION postgis; -- �꽕移� 媛��뒫
 
 create index pol_dong_bounds_geom_idx on pol_dong_bounds using gist(geom);
 create index pol_dong_bounds_emdcd_idx on pol_dong_bounds("EMD_CD");
@@ -31,7 +31,7 @@ create index pol_gwand_bounds_geom_idx on pol_gwang_bounds_sim using gist(geom);
 --where ctprvn_cd='50';
 
 
--- 100m -> 2917개 토지 
+-- 100m -> 2917媛� �넗吏� 
 --max
 --x: 127.0754445
 --y: 37.5128137
@@ -39,7 +39,9 @@ create index pol_gwand_bounds_geom_idx on pol_gwang_bounds_sim using gist(geom);
 --x: 127.0540941
 --y: 37.4967105
 select count(*) from pol_seoul_lands_gn pslg where st_intersects(geom, st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.0754445 37.5128137)', 4326)) );
+select pnu, (select jiga from pub_price_gn_lands ppgl where ppgl.pnu=pslg.pnu), st_asgeojson(geom)::jsonb from pol_seoul_lands_gn pslg where st_intersects(geom, st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.0754445 37.5128137)', 4326)) );
 select pnu, st_asgeojson(geom)::jsonb from pol_seoul_lands_gn pslg where st_intersects(geom, st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.0754445 37.5128137)', 4326)) );
+
 select json_build_object(
     'type', 'FeatureCollection',
     'features', jsonb_agg(ST_AsGeoJSON(t.*)::jsonb)
@@ -55,7 +57,7 @@ from ( values (1, 'one', 'POINT(1 1)'::geometry),
 
 select st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.0754445 37.5128137)', 4326));
 
--- 30m -> 414개 토지 
+-- 30m -> 414媛� �넗吏� 
 --max
 --x: 127.0667703
 --y: 37.509435
@@ -70,7 +72,7 @@ select jsonb_build_object(
 from (select pnu, geom from pol_seoul_lands_gn pslg where st_intersects( geom, st_envelope(st_geometryfromtext('LINESTRING(127.0667703 37.509435,127.0590348 37.5044263)', 4326)) )) as t(pnu, geom);
 select st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.0754445 37.5128137)', 4326));
 
--- 20m -> 128개 토지 
+-- 20m -> 128媛� �넗吏� 
 --max
 --x: 127.0651771
 --y: 37.5089819
@@ -81,3 +83,37 @@ select count(*) from pol_seoul_lands_gn pslg where st_intersects(geom, st_envelo
 select st_envelope(st_geometryfromtext('LINESTRING(127.0540941 37.4967105,127.0754445 37.5128137)', 4326));
 
 
+SELECT TRUE;
+
+select min(jiga),
+percentile_disc(0.01) within group (order by jiga) "0.01",
+percentile_disc(0.1) within group (order by jiga) "0.1",
+percentile_disc(0.25) within group (order by jiga) "0.25",
+percentile_disc(0.5) within group (order by jiga) "0.5",
+percentile_disc(0.75) within group (order by jiga) "0.75",
+percentile_disc(0.9) within group (order by jiga) "0.9",
+percentile_disc(0.99) within group (order by jiga) "0.99",
+percentile_disc(0.999) within group (order by jiga) "0.999",
+max(jiga)
+from pub_price_gn_lands ppgl where (select jimok from pol_seoul_lands_gn pslg where pslg.pnu=ppgl.pnu)!='도';
+
+select min(jiga),
+percentile_disc(0.01) within group (order by jiga) "0.01",
+percentile_disc(0.1) within group (order by jiga) "0.1",
+percentile_disc(0.25) within group (order by jiga) "0.25",
+percentile_disc(0.5) within group (order by jiga) "0.5",
+percentile_disc(0.75) within group (order by jiga) "0.75",
+percentile_disc(0.9) within group (order by jiga) "0.9",
+percentile_disc(0.99) within group (order by jiga) "0.99",
+percentile_disc(0.999) within group (order by jiga) "0.999",
+max(jiga)
+from pub_price_gn_lands ppgl;
+
+select jsonb_build_object(
+    'type', 'FeatureCollection',
+    'features', jsonb_agg(st_asgeojson(t.*)::jsonb)
+)::jsonb
+from (select
+    asset_pnu, true, asset_pol
+    from asset where pnu='1168010600109450029'
+) as t(asset_pnu, asset, geom);

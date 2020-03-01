@@ -225,3 +225,80 @@ sum(
 (select area from jijuk_46 jj where jj."PNU"=pp."PNU" )
 ) from pub_price_46 pp)
 where ctprvn_cd='46';
+
+
+select pbb.pnu_main, pbb.bpks, (select st_union(geom) from pol_seoul_lands_gn pslg where pslg.pnu in (select unnest(pbb2.bpnus) from pnu_bpk_busok2 pbb2 where pbb2.pnu_main=pbb.pnu_main) ) 
+from pnu_bpk_busok2 pbb ;-- main 땅 pnu마다 폴리곤 union 
+
+create materialized view pols_by_main_pnu_union as select pnu_main, bpks, (select st_union(st_collect) from pols_by_main_pnu2 pbmp2 where pbmp2.pnu_main=pbmp.pnu_main) from pols_by_main_pnu2 pbmp with data; -- 위에랑 same
+
+select st_boundary(st_union) from pols_by_main_pnu_union; -- no 의미
+select st_exteriorring(st_union) from pols_by_main_pnu_union; -- multipol => null
+
+select count(*) from pols_by_main_pnu_union pbmpu where substring(st_astext(st_union), 0, 8)='POLYGON' ;
+select count(*) from pols_by_main_pnu_union pbmpu where substring(st_astext(st_union), 0, 8)='MULTIPO' ;
+select count(*) from pols_by_main_pnu_union pbmpu where substring(st_astext(st_union), 0, 8) not in ('POLYGON', 'MULTIPO') ;
+
+select pmcm.pnu_main, (select st_union(st_union) from pols_by_main_pnu_union pbmpu where pbmpu.pnu_main in (select unnest(pnu_main_set) from pnu_main_comb_map pmcm2 where pmcm2.pnu_main=pmcm.pnu_main )) from pnu_main_comb_map pmcm;
+
+select min(pnu_main), (select st_union(st_union) from pols_by_main_pnu_union pbmpu where pbmpu.pnu_main in (select unnest(pnu_main_set))) from pnu_main_comb_map pmcm group by pnu_main_set;
+
+create materialized view pols_main_pnu_comb_union as 
+select 
+pnu_main, 
+(select min(pnu) from unnest(pnu_main_set) as t(pnu)),
+(select st_union((select st_union from pols_by_main_pnu_union pbmpu where pbmpu.pnu_main=pnu)) from unnest(pnu_main_set) as t(pnu))
+from pnu_main_comb_map pmcm;
+
+-- create materialized view pols_main_pnu_comb_union as select min(pnu_main), (select st_union(st_union) from pols_by_main_pnu_union pbmpu where pbmpu.pnu_main in (select unnest(pnu_main_set))) from pnu_main_comb_map pmcm group by pnu_main_set;
+
+create or replace function asset_pol_by_pnu(pnu text)
+returns geometry
+as $$
+def pol_by_main_pnu(pnu):
+    mp_comb_check = plpy.execute("select st_union, min from pols_main_pnu_comb_union where pnu_main='%s'"%pnu)
+    if mp_comb_check:
+        return mp_comb_check[0]['st_union']
+    else:
+        mp_check = plpy.execute("select st_union from pols_by_main_pnu_union where pnu_main='%s'"%pnu)
+        if mp_check:
+            return mp_check[0]['st_union']
+        else:
+            return None
+
+busok_check = plpy.execute("select pnu_main from busok_main_pnu_map where bpnu='%s'"%pnu)
+if busok_check:
+    return pol_by_main_pnu(busok_check[0]['pnu_main'])
+else:
+    return pol_by_main_pnu(pnu)
+$$ LANGUAGE plpython3u
+immutable
+RETURNS NULL ON NULL INPUT;
+
+drop function asset_pnu_by_pnu;
+create or replace function asset_pnu_by_pnu(pnu text)
+returns text
+as $$
+def pol_by_main_pnu(pnu):
+    mp_comb_check = plpy.execute("select st_union, min from pols_main_pnu_comb_union where pnu_main='%s'"%pnu)
+    if mp_comb_check:
+        return mp_comb_check[0]['min']
+    else:
+        mp_check = plpy.execute("select st_union from pols_by_main_pnu_union where pnu_main='%s'"%pnu)
+        if mp_check:
+            return pnu
+        else:
+            return None
+
+busok_check = plpy.execute("select pnu_main from busok_main_pnu_map where bpnu='%s'"%pnu)
+if busok_check:
+    return busok_check[0]['pnu_main']
+else:
+    return pol_by_main_pnu(pnu)
+$$ LANGUAGE plpython3u
+immutable
+RETURNS NULL ON NULL INPUT;
+
+create table _asset as select pnu, coalesce(asset_pol_by_pnu(pnu), geom) asset_pol, coalesce(asset_pnu_by_pnu(pnu), pnu) asset_pnu from pol_seoul_lands_gn pslg;
+
+
