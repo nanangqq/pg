@@ -125,7 +125,7 @@ sys.setrecursionlimit(2000)
 def find_nearby(pnu, state):
     if pnu not in state['explored']:
         state['explored'].append(pnu)
-    nearby = plpy.execute("select pnu from pol_seoul_lands_gn pslg where st_touches( geom, (select geom from pol_seoul_lands_gn pslg2 where pslg2.pnu='%s')) and jimok!='도'"%pnu)
+    nearby = plpy.execute("select pnu from pol_seoul_lands_gn pslg where st_intersects( st_buffer(geom,0.0000001), (select geom from pol_seoul_lands_gn pslg2 where pslg2.pnu='%s')) and jimok!='도'"%pnu)
     for rec in nearby:
         if rec['pnu'] in state['found']:
             continue
@@ -145,8 +145,9 @@ IMMUTABLE
 RETURNS NULL ON NULL INPUT;
 
 select unnest( (select get_block_pnus(pnu) from pol_seoul_lands_gn pslg limit 1) );
-select pnu, (select st_union(geom) from pol_seoul_lands_gn pslg2 where pslg2.pnu in (select unnest( (select get_block_pnus(pnu) from pol_seoul_lands_gn pslg where pslg.pnu=pslg3.pnu ) ) ) ) from pol_seoul_lands_gn pslg3 where pslg3.jimok='대' ;
+select pnu, (select st_union(st_buffer(geom, 0.0000001)) from pol_seoul_lands_gn pslg2 where pslg2.pnu in (select unnest( (select get_block_pnus(pnu) from pol_seoul_lands_gn pslg where pslg.pnu=pslg3.pnu ) ) ) ) from pol_seoul_lands_gn pslg3 where pslg3.jimok='대' limit 5;
 
+select st_area(st_buffer(geom,0.0000001), true), st_area(geom, true), st_buffer(geom,0.000001), geom from pol_seoul_lands_gn pslg;
 
 -------------- vos_test
 select * from pol_landuse_comm where st_intersects(geom, (select geom from pol_sgg_bounds psb where psb."ADM_SECT_C"='11680'));
