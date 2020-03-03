@@ -227,7 +227,7 @@ sum(
 where ctprvn_cd='46';
 
 
-select pbb.pnu_main, pbb.bpks, (select st_union(geom) from pol_seoul_lands_gn pslg where pslg.pnu in (select unnest(pbb2.bpnus) from pnu_bpk_busok2 pbb2 where pbb2.pnu_main=pbb.pnu_main) ) 
+select pbb.pnu_main, pbb.bpks, (select st_union(geom) from pol_seoul_lands_gn pslg where pslg.pnu in ( select unnest(pbb2.bpnus) from pnu_bpk_busok2 pbb2 where pbb2.pnu_main=pbb.pnu_main) ) 
 from pnu_bpk_busok2 pbb ;-- main 땅 pnu마다 폴리곤 union 
 
 create materialized view pols_by_main_pnu_union as select pnu_main, bpks, (select st_union(st_collect) from pols_by_main_pnu2 pbmp2 where pbmp2.pnu_main=pbmp.pnu_main) from pols_by_main_pnu2 pbmp with data; -- 위에랑 same
@@ -252,8 +252,7 @@ from pnu_main_comb_map pmcm;
 
 -- create materialized view pols_main_pnu_comb_union as select min(pnu_main), (select st_union(st_union) from pols_by_main_pnu_union pbmpu where pbmpu.pnu_main in (select unnest(pnu_main_set))) from pnu_main_comb_map pmcm group by pnu_main_set;
 
-create or replace function asset_pol_by_pnu(pnu text)
-returns geometry
+create or replace function asset_pol_by_pnu(pnu text) returns geometry
 as $$
 def pol_by_main_pnu(pnu):
     mp_comb_check = plpy.execute("select st_union, min from pols_main_pnu_comb_union where pnu_main='%s'"%pnu)
@@ -350,5 +349,11 @@ select st_distance(
 select st_expand(geom,0.0001), geom from pol_seoul_lands_gn pslg where pnu='1168010100106150020';
 select st_expand(geom,0.0001), geom from pol_seoul_lands_gn pslg where pnu='1168010100106150021';
 
+drop table gn_roads;
 create table gn_roads as (select st_union(geom) from pol_seoul_lands_gn pslg where jimok='도');
-select st_dump((st_dump(st_union)).geom) from gn_roads;
+select st_area((st_dump(st_union)).geom) area, (st_dump(st_union)).geom from gn_roads order by area desc;
+
+create table gn_roads as (select st_union(st_buffer(geom, 0.0000001)) from pol_seoul_lands_gn pslg where jimok='도');
+
+select distinct jimok from pol_seoul_lands_gn pslg ;
+
