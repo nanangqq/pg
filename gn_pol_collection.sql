@@ -301,4 +301,54 @@ RETURNS NULL ON NULL INPUT;
 
 create table _asset as select pnu, coalesce(asset_pol_by_pnu(pnu), geom) asset_pol, coalesce(asset_pnu_by_pnu(pnu), pnu) asset_pnu from pol_seoul_lands_gn pslg;
 
+-- block union 0303
+create or replace function get_block_pnus(pnu text) returns text[]
+as $$
+import sys
+sys.setrecursionlimit(3000)
+def find_nearby(pnu, state):
+    if pnu not in state['explored']:
+        state['explored'].append(pnu)
+    nearby = plpy.execute("select pnu from pol_seoul_lands_gn_mat pslg where st_intersects(geom, (select st_expand(geom, 0.0001) from pol_seoul_lands_gn_mat pslg2 where pslg2.pnu='%s')) and st_distance( geom, (select geom from pol_seoul_lands_gn_mat pslg2 where pslg2.pnu='%s'), true) < 0.1 and jimok!='도'"%(pnu,pnu))
+    for rec in nearby:
+        if rec['pnu'] in state['found']:
+            continue
+        else:
+            state['found'].append(rec['pnu'])
+    end_chk = True
+    for opnu in state['found']:
+        if opnu not in state['explored']:
+            end_chk = False
+            return find_nearby(opnu, state)
+    if end_chk:
+        return state 
+state = {'found':[], 'explored':[]}
+return find_nearby(pnu, state)['found']
+$$ LANGUAGE plpython3u
+IMMUTABLE
+RETURNS NULL ON NULL INPUT;
 
+select unnest( (select get_block_pnus(pnu) from pol_seoul_lands_gn_mat pslg limit 1) );
+select pnu, geom, (select st_union(geom) from pol_seoul_lands_gn_mat pslg2 where pslg2.pnu in (select unnest( (select get_block_pnus(pnu) from pol_seoul_lands_gn_mat pslg where pslg.pnu=pslg3.pnu ) ) ) ) from pol_seoul_lands_gn_mat pslg3 where pslg3.jimok='대' limit 9;
+create index pol_seoul_lands_gn_pnu_idx on pol_seoul_lands_gn_mat(pnu);
+
+select st_geometrytype(geom) from pol_seoul_lands_gn_mat pslgm ; 
+select count(*) from pol_seoul_lands_gn_mat pslgm where st_geometrytype(geom)='ST_MultiPolygon';
+select count(*) from pol_seoul_lands_gn_mat pslgm where st_geometrytype(geom)='ST_Polygon';
+select count(*) from pol_seoul_lands_gn_mat pslgm ;
+
+select st_exteriorring(t) from (select (st_dump(geom)).geom t from pol_seoul_lands_gn_mat pslgm where st_geometrytype(geom)='ST_MultiPolygon') as foo;
+
+select st_offsetcurve(st_exteriorring(geom), 0.00001) from pol_seoul_lands_gn_mat pslgm where st_geometrytype(geom)='ST_Polygon' limit 10;
+select st_scale(geom, 1.01, 1.01), geom from pol_seoul_lands_gn_mat pslgm where st_geometrytype(geom)='ST_Polygon' limit 100;
+
+select pnu, geom from pol_seoul_lands_gn pslg ;
+select st_distance(
+(select geom from pol_seoul_lands_gn pslg where pnu='1168010100106150020'),
+(select geom from pol_seoul_lands_gn pslg where pnu='1168010100106150021'), true);
+
+select st_expand(geom,0.0001), geom from pol_seoul_lands_gn pslg where pnu='1168010100106150020';
+select st_expand(geom,0.0001), geom from pol_seoul_lands_gn pslg where pnu='1168010100106150021';
+
+create table gn_roads as (select st_union(geom) from pol_seoul_lands_gn pslg where jimok='도');
+select st_dump((st_dump(st_union)).geom) from gn_roads;
