@@ -357,3 +357,148 @@ create table gn_roads as (select st_union(st_buffer(geom, 0.0000001)) from pol_s
 
 select distinct jimok from pol_seoul_lands_gn pslg ;
 
+select (st_dumprings(geom)).geom from (select (st_dump(st_union)).geom, st_area((st_dump(st_union)).geom, true) area from gn_roads order by area desc) dump 
+where st_nrings(geom)>1 and st_exteriorring(geom) in (select st_exteriorring(geom) from (select (st_dump(st_union)).geom, st_area((st_dump(st_union)).geom, true) area from gn_roads order by area desc) dump where st_nrings(geom)>1) ;
+select st_exteriorring(geom) from (select (st_dump(st_union)).geom, st_area((st_dump(st_union)).geom, true) area from gn_roads order by area desc) dump where st_nrings(geom)>1;
+
+create table gn_block_pols as select geom, (select count(*) from pol_seoul_lands_gn pslg where jimok='도' and st_intersects(dump_ring.geom, pslg.geom)) from (select (st_dumprings(geom)).geom from (select (st_dump(st_union)).geom from gn_roads) dump where st_nrings(geom)>1) dump_ring;
+
+select count(*), count from gn_block_pols group by count;
+select * from gn_block_pols where count>0;
+select * from gn_block_pols where count=0;
+select * from gn_block_pols ;
+create table gn_block_pol_u1 as select st_union(geom) from gn_block_pols gbp where count<9 and (select count(*) from pol_seoul_lands_gn pslg where jimok!='도' and st_intersects(pslg.geom, gbp.geom))>0;
+
+select count(geom) from pol_seoul_lands_gn pslg where not st_intersects(geom, (select st_union from gn_block_pol_u1)) ;
+
+select st_union geom from gn_block_pol_u1 union
+select geom from pol_seoul_lands_gn pslg where not st_intersects(geom, (select st_union from gn_block_pol_u1)) ;
+
+select geom from pol_seoul_lands_gn pslg where jimok!='도' and not st_intersects(geom, (select st_union from gn_block_pol_u1));
+
+drop table not_in_blocks;
+create table not_in_blocks as select * from pol_seoul_lands_gn pslg where not st_intersects(geom, (select st_union from gn_block_pol_u1));
+
+create index not_in_blocks_pnu_idx on not_in_blocks(pnu);
+create index not_in_blocks_jimok_idx on not_in_blocks(jimok);
+create index not_in_blocks_geom_idx on not_in_blocks using gist(geom);
+
+create or replace function get_block_pnus(pnu text, jimok text) returns text[]
+as $$
+import sys
+sys.setrecursionlimit(10000)
+def find_nearby(pnu, state):
+    if pnu not in state['explored']:
+        state['explored'].append(pnu)
+    nearby = plpy.execute("select pnu from not_in_blocks where st_dwithin( geom, (select geom from pol_seoul_lands_gn pslg2 where pslg2.pnu='%s'), 0.0000001) and jimok='%s'"%(pnu,jimok))
+    for rec in nearby:
+        if rec['pnu'] in state['found']:
+            continue
+        else:
+            state['found'].append(rec['pnu'])
+    end_chk = True
+    for opnu in state['found']:
+        if opnu not in state['explored']:
+            end_chk = False
+            return find_nearby(opnu, state)
+    if end_chk:
+        return state 
+state = {'found':[], 'explored':[]}
+return find_nearby(pnu, state)['found']
+$$ LANGUAGE plpython3u
+IMMUTABLE
+RETURNS NULL ON NULL INPUT;
+
+select get_block_pnus(pnu) from not_in_blocks nib where jimok='대';
+
+select (select st_union(geom) from not_in_blocks nib3 where nib3.pnu in (select unnest(get_block_pnus(nib.pnu)) from not_in_blocks nib where nib.jimok='대' and nib.pnu=nib2.pnu) ) from not_in_blocks nib2 where nib2.jimok ='대';
+
+select pnu, jimok, get_block_pnus(pnu,jimok), (select st_union(st_buffer(geom, 0.0000001)) from not_in_blocks nib3 where nib3.pnu in (select unnest(get_block_pnus(nib.pnu, nib.jimok)) from not_in_blocks nib where nib.jimok!='도' and nib.pnu=nib2.pnu) ) from not_in_blocks nib2 where nib2.jimok !='도' limit 100;
+
+create table not_in_blocks_u1 as select pnu, jimok, get_block_pnus(pnu,jimok), (select st_union(st_buffer(geom, 0.0000001)) from not_in_blocks nib3 where nib3.pnu in (select unnest(get_block_pnus(nib.pnu, nib.jimok)) from not_in_blocks nib where nib.jimok!='도' and nib.pnu=nib2.pnu) ) from not_in_blocks nib2 where nib2.jimok !='도';
+
+select count(*), jimok from not_in_blocks_u1 nibu group by jimok ;
+select distinct st_union from not_in_blocks_u1 nibu where jimok = '전';
+
+select distinct st_union geom from not_in_blocks_u1 nibu union
+select geom from pol_seoul_lands_gn pslg where jimok ='도' union
+select st_union geom from gn_block_pol_u1;
+
+select * from pol_seoul_lands_gn pslg where pnu ='1168010600110100001';
+
+create table gn_block_pol_all as (select distinct st_union geom from not_in_blocks_u1 nibu union
+select geom from gn_block_pols gbp where count<9 and (select count(*) from pol_seoul_lands_gn pslg where jimok!='도' and st_intersects(pslg.geom, gbp.geom))>0 union 
+select geom from pol_seoul_lands_gn pslg2 where jimok ='도' union
+select geom from pol_seoul_lands_gn pslg where pnu ='1168010600110100001');
+
+create index block_idx on gn_block_pol_all using gist(geom);
+select * from gn_block_pol_all;
+select pslg.geom, (select count(*) from gn_block_pol_all gbpa where st_intersects(gbpa.geom, st_buffer(pslg.geom, -0.0000005))), (select st_collect(geom) from gn_block_pol_all gbpa where st_intersects(gbpa.geom, st_buffer(pslg.geom, -0.0000005))) from pol_seoul_lands_gn pslg ;
+
+create table block_map as select 
+pnu, geom, 
+(select count(*) from gn_block_pol_all gbpa where st_intersects(pslg.geom, gbpa.geom) and st_area(st_intersection(pslg.geom, gbpa.geom))/st_area(pslg.geom)>0.8) block_cnt, 
+(select st_collect(geom) from gn_block_pol_all gbpa where st_intersects(pslg.geom, gbpa.geom) and st_area(st_intersection(pslg.geom, gbpa.geom))/st_area(pslg.geom)>0.8) blocks
+from pol_seoul_lands_gn pslg;
+
+create table gn_block_pol_all_buff as select st_buffer(geom, -0.000001) from gn_block_pol_all gbpa;
+create index block_buf_idx on gn_block_pol_all_buff using gist(st_buffer);
+
+create materialized view block_buff_with_ids as select (row_number() over()), st_buffer from gn_block_pol_all_buff gbpab with data;
+select st_buffer from block_buff_with_ids bbwi ;
+
+create materialized view block_counts as select pnu, geom, 
+(select count(*) from block_buff_with_ids gbpab where st_intersects(gbpab.st_buffer, pslg.geom) and st_area(st_intersection(pslg.geom, gbpab.st_buffer))/st_area(pslg.geom)>0.8) block_cnt, 
+(select array_agg(row_number) from block_buff_with_ids gbpab where st_intersects(gbpab.st_buffer, pslg.geom) and st_area(st_intersection(pslg.geom, gbpab.st_buffer))/st_area(pslg.geom)>0.8) blocks
+from pol_seoul_lands_gn pslg order by block_cnt desc with data; 
+
+select * from block_counts bc where block_cnt <1;
+
+select pnu, geom, 
+(select t.geom from (select gbpa.geom, st_area(st_intersection(st_makevalid(gbpa.geom), st_makevalid(pslg.geom)), true) ints_area from gn_block_pol_all gbpa where st_intersects(gbpa.geom, pslg.geom) order by ints_area desc limit 1) t),
+(select count(*) from gn_block_pol_all gbpa where st_intersects(gbpa.geom, pslg.geom))
+from pol_seoul_lands_gn pslg limit 1000;
+
+create materialized view max_area_block 
+as select pnu, geom, 
+(select t.geom from (select gbpa.geom, st_area(st_intersection(st_makevalid(gbpa.geom), st_makevalid(pslg.geom)), true) ints_area from gn_block_pol_all gbpa where st_intersects(gbpa.geom, pslg.geom) order by ints_area desc limit 1) t) block,
+(select count(*) from gn_block_pol_all gbpa where st_intersects(gbpa.geom, pslg.geom)) block_cnt
+from pol_seoul_lands_gn pslg with data;
+
+select count(*) from max_area_block where block_cnt=0;
+select count(distinct block) from max_area_block ;
+select count(*) from gn_block_pol_all gbpa ;
+select count(*) from max_area_block where block isnull;
+
+select count(*) from gn_block_pol_all gbpa where st_area(geom) notnull;
+select count(*) from gn_block_pol_all gbpa where st_area(geom)>0;
+
+create table gn_block_final as select block, array_agg(pnu) pnus, min(pnu) pnu_block_rep from max_area_block mab group by block;
+
+select count(*) cnt, pnu_block_rep from gn_block_final gbf group by pnu_block_rep having count(*)>1;
+
+drop table gn_block_pnu_map;
+create table gn_block_pnu_map as select unnest(pnus) pnu, pnu_block_rep from gn_block_final gbf ;
+
+create index gn_block_pnu_map_pnu_idx on gn_block_pnu_map(pnu);
+create index gn_block_final_pnu_block_rep_idx on gn_block_final(pnu_block_rep);
+create index gn_block_final_block_idx on gn_block_final using gist(block);
+
+select (select st_intersection(pdb.geom, st_union) block from gn_roads gr) from pol_dong_bounds pdb where substring("EMD_CD",1,5)='11680';
+
+select * from gn_block_final where (select jimok from pol_seoul_lands_gn pslg where pslg.pnu=pnu_block_rep)!='도';
+
+select block, 
+(select array_agg(pslg.pnu) from pol_seoul_lands_gn pslg where st_within(pslg.geom, block) and jimok='도') pnus, 
+(select min(pslg.pnu) from pol_seoul_lands_gn pslg where st_within(pslg.geom, block) and jimok='도') pnu_block_rep 
+from (select (select st_intersection(pdb.geom, st_union) block from gn_roads gr) from pol_dong_bounds pdb where substring("EMD_CD",1,5)='11680') as road_blocks;
+
+create table gn_block_final_roadblocks as
+select * from gn_block_final where (select jimok from pol_seoul_lands_gn pslg where pslg.pnu=pnu_block_rep)!='도' union
+select block, 
+(select array_agg(pslg.pnu) from pol_seoul_lands_gn pslg where st_within(pslg.geom, block) and jimok='도') pnus, 
+(select min(pslg.pnu) from pol_seoul_lands_gn pslg where st_within(pslg.geom, block) and jimok='도') pnu_block_rep 
+from (select (select st_intersection(pdb.geom, st_union) block from gn_roads gr) from pol_dong_bounds pdb where substring("EMD_CD",1,5)='11680') as road_blocks;
+
+create index gn_block_final_roadblocks_pnu_block_rep_idx on gn_block_final_roadblocks(pnu_block_rep);
+create index gn_block_final_roadblocks_block_idx on gn_block_final_roadblocks using gist(block);
