@@ -493,12 +493,163 @@ select block,
 (select min(pslg.pnu) from pol_seoul_lands_gn pslg where st_within(pslg.geom, block) and jimok='도') pnu_block_rep 
 from (select (select st_intersection(pdb.geom, st_union) block from gn_roads gr) from pol_dong_bounds pdb where substring("EMD_CD",1,5)='11680') as road_blocks;
 
+drop table gn_block_final_roadblocks;
 create table gn_block_final_roadblocks as
-select * from gn_block_final where (select jimok from pol_seoul_lands_gn pslg where pslg.pnu=pnu_block_rep)!='도' union
+select *, false road from gn_block_final where (select jimok from pol_seoul_lands_gn pslg where pslg.pnu=pnu_block_rep)!='도' 
+union
 select block, 
 (select array_agg(pslg.pnu) from pol_seoul_lands_gn pslg where st_within(pslg.geom, block) and jimok='도') pnus, 
-(select min(pslg.pnu) from pol_seoul_lands_gn pslg where st_within(pslg.geom, block) and jimok='도') pnu_block_rep 
+(select min(pslg.pnu) from pol_seoul_lands_gn pslg where st_within(pslg.geom, block) and jimok='도') pnu_block_rep,
+true road
 from (select (select st_intersection(pdb.geom, st_union) block from gn_roads gr) from pol_dong_bounds pdb where substring("EMD_CD",1,5)='11680') as road_blocks;
 
 create index gn_block_final_roadblocks_pnu_block_rep_idx on gn_block_final_roadblocks(pnu_block_rep);
 create index gn_block_final_roadblocks_block_idx on gn_block_final_roadblocks using gist(block);
+
+select count(*) cnt, pnu_block_rep from gn_block_final_roadblocks group by pnu_block_rep having count(*)>1; 
+select count(*) from pub_price_gn_lands ppgl where ppgl.pnu in (select unnest(gbfr.pnus) from gn_block_final_roadblocks gbfr);
+
+select count(*) from
+(select sum(r.jiga*r.area)/sum(r.area), (select gbfr2.block from gn_block_final_roadblocks gbfr2 where gbfr2.pnu_block_rep = r.pnu_block_rep), r.pnu_block_rep from
+(select t.pnu, t.pnu_block_rep, (select ppgl.jiga from pub_price_gn_lands ppgl where ppgl.pnu=t.pnu), (select pslg.area from pol_seoul_lands_gn pslg where pslg.pnu=t.pnu) from (select unnest(gbfr.pnus), pnu_block_rep from gn_block_final_roadblocks gbfr) as t(pnu, pnu_block_rep)) as r
+group by r.pnu_block_rep) as avg_price_t;
+select count(*) from gn_block_final_roadblocks gbfr ;
+
+update gn_block_final_roadblocks gbfr3 set avg_pub_price = (select avg_pub_price from
+(select sum(r.jiga*r.area)/sum(r.area) avg_pub_price, (select gbfr2.block from gn_block_final_roadblocks gbfr2 where gbfr2.pnu_block_rep = r.pnu_block_rep), r.pnu_block_rep from
+(select t.pnu, t.pnu_block_rep, (select ppgl.jiga from pub_price_gn_lands ppgl where ppgl.pnu=t.pnu), (select pslg.area from pol_seoul_lands_gn pslg where pslg.pnu=t.pnu) from (select unnest(gbfr.pnus), pnu_block_rep from gn_block_final_roadblocks gbfr) as t(pnu, pnu_block_rep)) as r
+group by r.pnu_block_rep) as avg_price_t where avg_price_t.pnu_block_rep=gbfr3.pnu_block_rep) ;
+
+select (select jiga from pub_price_gn_lands ppgl where ppgl.pnu=t.pnu), (select pslg.area from pol_seoul_lands_gn pslg where pslg.pnu=t.pnu)  from (select unnest(pnus) pnu from gn_block_final_roadblocks gbfr where avg_pub_price isnull) t;
+select * from pub_price_gn_lands ppgl where ppgl.pnu in (select unnest(pnus) pnu from gn_block_final_roadblocks gbfr where avg_pub_price isnull); -- 공시지가 자체가 없는 경우,,
+
+select min(avg_pub_price),
+percentile_disc(0.01) within group (order by avg_pub_price) "0.01",
+percentile_disc(0.1) within group (order by avg_pub_price) "0.1",
+percentile_disc(0.25) within group (order by avg_pub_price) "0.25",
+percentile_disc(0.5) within group (order by avg_pub_price) "0.5",
+percentile_disc(0.75) within group (order by avg_pub_price) "0.75",
+percentile_disc(0.9) within group (order by avg_pub_price) "0.9",
+percentile_disc(0.99) within group (order by avg_pub_price) "0.99",
+percentile_disc(0.999) within group (order by avg_pub_price) "0.999",
+max(avg_pub_price)
+from gn_block_final_roadblocks gbfr ;
+
+--frontend pricemap 테이블 작성 0310
+create table _block as
+select concat('block_', pnu_block_rep) id, block geom, avg_pub_price, road, pnus, 
+concat(
+(case when cast(substring(pnu_block_rep, 16, 4) as integer)>0 then concat(
+(select pdb."EMD_NM" from pol_dong_bounds pdb where pdb."EMD_CD" = substring(pnu_block_rep, 1, 8)), 
+'-', cast(cast(substring(pnu_block_rep, 12, 4) as integer) as text), 
+'-', cast(cast(substring(pnu_block_rep, 16, 4) as integer) as text)
+) else concat(
+(select pdb."EMD_NM" from pol_dong_bounds pdb where pdb."EMD_CD" = substring(pnu_block_rep, 1, 8)), 
+'-', cast(cast(substring(pnu_block_rep, 12, 4) as integer) as text)
+) end),
+' 블록') nm
+from gn_block_final_roadblocks gbfr ;
+
+create index _block_id_idx on _block(id);
+create index _block_geom_idx on _block using gist(geom);
+
+
+create table _land as
+select concat('land_', pnu) id, geom, (select jiga from pub_price_gn_lands ppgl where ppgl.pnu=pslg.pnu) pub_price, jimok, 
+concat((select pdb."EMD_NM" from pol_dong_bounds pdb where pdb."EMD_CD" = substring(pslg.pnu, 1, 8)), ' ', jibun) nm 
+from pol_seoul_lands_gn pslg ;
+
+create index _land_id_idx on _land(id);
+create index _land_geom_idx on _land using gist(geom);
+
+
+drop table _gwang;
+create table _gwang as
+select concat('gwang_', ctprvn_cd) id, geom, avg_pub_price, ctp_kor_nm nm from pol_gwang_bounds_sim pgbs;
+
+create index _gwang_id_idx on _gwang(id);
+create index _gwang_geom_idx on _gwang using gist(geom);
+
+
+drop table _dong;
+create table _dong as
+select concat('dong_', "EMD_CD") id, geom, avg_pub_price, "EMD_NM" nm from pol_dong_bounds pdb ;
+
+create index _dong_id_idx on _dong(id);
+create index _dong_geom_idx on _dong using gist(geom);
+
+
+create table _gu as
+select concat('gu_', "ADM_SECT_C") id, geom, avg_pub_price, "SGG_NM" nm from pol_sgg_bounds psb ;
+
+create index _gu_id_idx on _gu(id);
+create index _gu_geom_idx on _gu using gist(geom);
+
+-- 서비스 외 지역 polygon gen
+drop table gwang_union_expt_seoul;
+create table gwang_union_expt_seoul as select st_union(st_buffer(geom, 0.00001)) from _gwang where nm!='서울특별시';
+
+select st_union(st_buffer(geom,0.0001)) from _gu where nm not in ('강남구', '서비스 준비중');
+
+select geom from _gu union select geom from gu_out;
+
+insert into _gu(id, geom, nm) values ('gu_00000', (select st_difference( go2.geom, (select st_union(g.geom) from _gu g where st_intersects(go2.geom, g.geom)) ) from gu_out go2), '서비스 준비중');
+
+insert into _dong(id, geom, nm) values ('dong_00000000', (select st_difference( (select st_union( (select st_union(st_buffer(geom,0.0001)) from _gu where nm not in ('강남구', '서비스 준비중')), geom ) from gu_out), (select geom from _gu where nm='강남구'))), '서비스 준비중') ;
+update _dong set geom = (select geom from _gu where id='gu_00000') where id='dong_00000000';
+
+insert into _block(id, geom, nm) values ('block_0000000000100000000', (select st_difference( (select st_union( (select st_union(st_buffer(geom,0.0001)) from _gu where nm not in ('강남구', '서비스 준비중')), geom ) from gu_out), (select geom from _gu where nm='강남구'))), '서비스 준비중') ;
+insert into _land(id, geom, nm) values ('land_0000000000100000000', (select geom from _block where id = 'block_0000000000100000000'), '서비스 준비중') ;
+
+
+-- price range
+select min(avg_pub_price),
+percentile_disc(0.01) within group (order by avg_pub_price) "0.01",
+percentile_disc(0.1) within group (order by avg_pub_price) "0.1",
+percentile_disc(0.25) within group (order by avg_pub_price) "0.25",
+percentile_disc(0.5) within group (order by avg_pub_price) "0.5",
+percentile_disc(0.75) within group (order by avg_pub_price) "0.75",
+percentile_disc(0.9) within group (order by avg_pub_price) "0.9",
+percentile_disc(0.99) within group (order by avg_pub_price) "0.99",
+percentile_disc(0.999) within group (order by avg_pub_price) "0.999",
+max(avg_pub_price)
+from _dong ;
+
+select min(avg_pub_price),
+percentile_disc(0.01) within group (order by avg_pub_price) "0.01",
+percentile_disc(0.1) within group (order by avg_pub_price) "0.1",
+percentile_disc(0.25) within group (order by avg_pub_price) "0.25",
+percentile_disc(0.5) within group (order by avg_pub_price) "0.5",
+percentile_disc(0.75) within group (order by avg_pub_price) "0.75",
+percentile_disc(0.9) within group (order by avg_pub_price) "0.9",
+percentile_disc(0.99) within group (order by avg_pub_price) "0.99",
+percentile_disc(0.999) within group (order by avg_pub_price) "0.999",
+max(avg_pub_price)
+from _gu ;
+
+select min(avg_pub_price),
+percentile_disc(0.01) within group (order by avg_pub_price) "0.01",
+percentile_disc(0.1) within group (order by avg_pub_price) "0.1",
+percentile_disc(0.25) within group (order by avg_pub_price) "0.25",
+percentile_disc(0.5) within group (order by avg_pub_price) "0.5",
+percentile_disc(0.75) within group (order by avg_pub_price) "0.75",
+percentile_disc(0.9) within group (order by avg_pub_price) "0.9",
+percentile_disc(0.99) within group (order by avg_pub_price) "0.99",
+percentile_disc(0.999) within group (order by avg_pub_price) "0.999",
+max(avg_pub_price)
+from _gwang ;
+
+-- _block 도로 nm 수정 
+select concat(split_part(nm, '-', 1), ' 도로') from _block where road;
+update _block set nm = concat(split_part(nm, '-', 1), ' 도로') where road;
+select nm from _block where road;
+
+--
+select count(*) from _dong;
+select count(distinct id) from _dong;
+-- asset 시작
+create index asset_geom_index on asset using gist(asset_pol);
+
+select asset_pol, st_centroid(asset_pol) from asset where st_intersects( st_pointfromtext('POINT(127.0608808 37.5086459)', 4326), asset_pol ); 
+
+select st_asgeojson(asset_pol ) from asset where asset_pnu = '1168010600109450010';

@@ -483,3 +483,7 @@ sum(
 (select area from jijuk_47 jj where jj."PNU"=pp."PNU" )
 ) from pub_price_47 pp)
 where ctprvn_cd='47';
+
+-- 0311 서비스 외 지역 polygon
+create table gu_out as select st_union(geom) geom from pol_gwang_bounds_buf pgbb where "index" != 0; -- union 된 뒤에 불러오는것이 너무 오래걸림,,, buff 먹인 뒤에 simplify 하고 union 해야 할듯 
+
