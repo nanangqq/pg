@@ -135,23 +135,26 @@ select lu_area_dist, asset_area from asset a;
 --}
 
 
+--lu_name_map = {
+--'jnju_1':'제1종전용주거지역',
+--'ilju_1':'제1종일반주거지역',
+--'ilju_2':'제2종일반주거지역',
+--'ilju_2_und7':'제2종일반주거지역',
+--'ilju_3':'제3종일반주거지역',
+--'ilsang':'일반상업지역',
+--'nt_green':'자연녹지지역',
+--'pd_green':'생산녹지지역',
+--'semiju':'준주거지역'
+--}
+
+--#{lu_name_map[lu]: allowance_map[lu_name_map[lu]] for lu in lu_area_dist}
+
 create or replace function get_yj_gp(lu_area_dist jsonb, asset_area float4) returns jsonb
 as $$
+import json
+a={'a': 1}
 
-lu_name_map = {
-'jnju_1':'제1종전용주거지역',
-'ilju_1':'제1종일반주거지역',
-'ilju_2':'제2종일반주거지역',
-'ilju_2_und7':'제2종일반주거지역',
-'ilju_3':'제3종일반주거지역',
-'ilsang':'일반상업지역',
-'nt_green':'자연녹지지역',
-'pd_green':'생산녹지지역',
-'semiju':'준주거지역'
-}
-
-#{lu_name_map[lu]: allowance_map[lu_name_map[lu]] for lu in lu_area_dist}
-return lu_name_map
+return json.dumps(a)
 $$ LANGUAGE plpython3u
 IMMUTABLE
 RETURNS NULL ON NULL INPUT;
