@@ -647,6 +647,8 @@ select nm from _block where road;
 --
 select count(*) from _dong;
 select count(distinct id) from _dong;
+
+
 -- asset 시작
 create index asset_geom_index on asset using gist(asset_pol);
 
@@ -675,7 +677,25 @@ from bpk_areadist ba ;
 
 select count(*) from asset_areadist_merged aam; 
 select count(*) from asset_bpks_merged aam;
+select count(*) from asset;
 
+-- 면적분포 데이터 업데이트
+create index asset_bpks_merged_pnu_idx on asset_bpks_merged(pnu);
+update asset a set bl_area_dist = (select aam.area_dist from asset_areadist_merged aam where aam.pnu=a.pnu);
+
+-- 자산 평균 공시지가 
+select a.pnu, a.asset_area, 
+(select sum(pub_price) from _land l where l.id in (select concat('land_', unnest(a.pnus)))), 
+(select sum( (select laglb.area from lu_areas_gn_lands_bu laglb where laglb.pnu=split_part(id,'_',2)) ) from _land l where l.id in (select concat('land_', unnest(a.pnus)))),
+(select sum( pub_price*(select laglb.area from lu_areas_gn_lands_bu laglb where laglb.pnu=split_part(id,'_',2)) ) from _land l where l.id in (select concat('land_', unnest(a.pnus)))),
+(select sum( pub_price*(select laglb.area from lu_areas_gn_lands_bu laglb where laglb.pnu=split_part(id,'_',2)) ) from _land l where l.id in (select concat('land_', unnest(a.pnus))))/a.asset_area ,
+(select array_agg(split_part(id,'_',2)) from _land l where l.id in (select concat('land_', unnest(a.pnus)))) from asset a;
+
+update asset a 
+set asset_pub_price = (select sum( pub_price*(select laglb.area from lu_areas_gn_lands_bu laglb where laglb.pnu=split_part(id,'_',2)) ) from _land l where l.id in (select concat('land_', unnest(a.pnus))))/a.asset_area;
+
+-- 자산 토지정보
+select (select array_agg from  a.pnus) from asset a;
 
 -- landuse 테이블
 create index landuse_pnu_idx on lot_landuse(pnu);

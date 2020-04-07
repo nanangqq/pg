@@ -72,3 +72,88 @@ select count(*) from asset_bpks;
 select pnu, (select bpks_merged from asset_bpks_comb_tmp abct2 where abct2.pnu=ab.pnu) from asset_bpks ab where ab.pnu in (select abct.pnu from asset_bpks_comb_tmp abct);
 create table asset_bpks_merged as select ab.pnu, coalesce( (select bpks_merged from asset_bpks_comb_tmp abct2 where abct2.pnu=ab.pnu), "coalesce" ) from asset_bpks ab;
 
+
+-- 자산 토지정보 데이터 가공
+select count(*) from asset;
+select (select array_agg(jsonb_build_object('jimok', ligm.jimok_nm)) from lot_information_gn_mat ligm where ligm.pnu in (select unnest(a.pnus))) from asset a;
+select (select array_agg(jsonb_build_object(t.pnu, (select jimok_nm from lot_information_gn_mat ligm where ligm.pnu=t.pnu))) from (select unnest(a.pnus) pnu) t) from asset a; -- 토지별 지목 정보
+select lu_area_dist, asset_area from asset a;
+
+--import sys
+--sys.setrecursionlimit(10000)
+--def find_nearby(pnu, state):
+--    if pnu not in state['explored']:
+--        state['explored'].append(pnu)
+--    nearby = plpy.execute("select pnu from not_in_blocks where st_dwithin( geom, (select geom from pol_seoul_lands_gn pslg2 where pslg2.pnu='%s'), 0.0000001) and jimok='%s'"%(pnu,jimok))
+--    for rec in nearby:
+--        if rec['pnu'] in state['found']:
+--            continue
+--        else:
+--            state['found'].append(rec['pnu'])
+--    end_chk = True
+--    for opnu in state['found']:
+--        if opnu not in state['explored']:
+--            end_chk = False
+--            return find_nearby(opnu, state)
+--    if end_chk:
+--        return state 
+--state = {'found':[], 'explored':[]}
+
+--allowance_map = {
+--'일반상업지역':[800,60],
+--'제1종전용주거지역':[100,50],
+--'제1종일반주거지역':[150,60],
+--'제2종전용주거지역':[120,40],
+--'제2종일반주거지역':[200,60],
+--'제2종일반주거지역(7층이하)':[200,60],
+--'제3종일반주거지역':[250,50],
+--'준주거지역':[400,60],
+--'생산녹지지역':[50,20],
+--'자연녹지지역':[50,20],
+--'중심상업지역':[1000,60],
+--'중심상업지역(역사도심)':[800,60],
+--'일반상업지역(역사도심)':[600,60],
+--'근린상업지역':[600,60],
+--'근린상업지역(역사도심)':[500,60],
+--'유통상업지역':[600,60],
+--'유통상업지역(역사도심)':[500,60],
+--'전용공업지역':[200,60],
+--'일반공업지역':[200,60],
+--'준공업지역':[400,60],
+--'보전녹지지역':[50,20],
+--'중심상업지역(학교이적지10년미만)':[500,60],
+--'일반상업지역(학교이적지10년미만)':[500,60],
+--'근린상업지역(학교이적지10년미만)':[500,60],
+--'유통상업지역(학교이적지10년미만)':[500,60],
+--'준주거지역(학교이적지10년미만)':[320,60],
+--'제1종전용주거지역(학교이적지10년미만)':[100,60],
+--'제1종일반주거지역(학교이적지10년미만)':[120,60],
+--'제2종전용주거지역(학교이적지10년미만)':[100,60],
+--'제2종일반주거지역(학교이적지10년미만)':[160,60],
+--'제2종일반주거지역(7층이하)(학교이적지10년미만)':[160,60],
+--'제3종일반주거지역(학교이적지10년미만)':[200,50]
+--}
+
+
+create or replace function get_yj_gp(lu_area_dist jsonb, asset_area float4) returns jsonb
+as $$
+
+lu_name_map = {
+'jnju_1':'제1종전용주거지역',
+'ilju_1':'제1종일반주거지역',
+'ilju_2':'제2종일반주거지역',
+'ilju_2_und7':'제2종일반주거지역',
+'ilju_3':'제3종일반주거지역',
+'ilsang':'일반상업지역',
+'nt_green':'자연녹지지역',
+'pd_green':'생산녹지지역',
+'semiju':'준주거지역'
+}
+
+#{lu_name_map[lu]: allowance_map[lu_name_map[lu]] for lu in lu_area_dist}
+return lu_name_map
+$$ LANGUAGE plpython3u
+IMMUTABLE
+RETURNS NULL ON NULL INPUT;
+
+select get_yj_gp(lu_area_dist, asset_area) from asset a;
