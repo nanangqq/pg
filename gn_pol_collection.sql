@@ -653,3 +653,37 @@ create index asset_geom_index on asset using gist(asset_pol);
 select asset_pol, st_centroid(asset_pol) from asset where st_intersects( st_pointfromtext('POINT(127.0608808 37.5086459)', 4326), asset_pol ); 
 
 select st_asgeojson(asset_pol ) from asset where asset_pnu = '1168010600109450010';
+
+select (select st_collect(l.geom) from _land l where split_part(l.id,'_',2) in (select unnest(a.pnus))), a.asset_pol from asset a limit 100;
+select split_part(id, '_', 2) from _land;
+
+select count(*) from asset where array_length(pnus,1)>1;
+
+
+-- asset 마다 면적분포 데이터 작성 
+create index asset_bpks_pnu_idx on asset_bpks_merged(pnu);
+
+select count(*) from bpk_areadist ba ;
+create index bpk_areadist_bpk_idx on bpk_areadist(bpk);
+
+select pnu, coalesce, (select array_agg(area_dist) from bpk_areadist ba where ba.bpk in (select unnest(abm."coalesce" ))) from asset_bpks_merged abm ;
+
+select jsonb_build_object(
+bpk, area_dist 
+)::jsonb
+from bpk_areadist ba ;
+
+select count(*) from asset_areadist_merged aam; 
+select count(*) from asset_bpks_merged aam;
+
+
+-- landuse 테이블
+create index landuse_pnu_idx on lot_landuse(pnu);
+select pnu, array_agg(landuse_nm) lus from lot_landuse ll where pnu like('11680%') and state_nm='포함' group by pnu having '절대보호구역' in (select unnest(array_agg(landuse_nm))); -- 549 개 
+select count(*) from (select pnu from lot_landuse ll where pnu like('11680%') and state_nm='포함' group by pnu having '절대보호구역' in (select unnest(array_agg(landuse_nm)))) as t;
+select pnu, array_agg(landuse_nm) lus from lot_landuse ll where pnu like('11680%') and state_nm='포함' group by pnu having '상대보호구역' in (select unnest(array_agg(landuse_nm)));
+select count(*) from (select pnu from lot_landuse ll where pnu like('11680%') and state_nm='포함' group by pnu having '상대보호구역' in (select unnest(array_agg(landuse_nm)))) as t; -- 11530 개
+select count(*) from (select pnu from lot_landuse ll where pnu like('11680%') group by pnu ) as t; -- 34750
+select * from asset where asset_pnu ='1168010100106140008';
+select * from asset where asset_pnu ='1168010300112200003';
+
