@@ -707,3 +707,36 @@ select count(*) from (select pnu from lot_landuse ll where pnu like('11680%') gr
 select * from asset where asset_pnu ='1168010100106140008';
 select * from asset where asset_pnu ='1168010300112200003';
 
+
+-- 토지, 건물, 추정가 데이터 자산테이블에 업데이트(추정가 데이터 나중에 추가해야 함)
+create index asset_bld_data_pnu_idx on asset_bld_data(pnu);
+create index asset_rst_lands_pnu_idx on asset_rst_lands(pnu);
+create index asset_rst_merged_pnu_idx on asset_rst_merged(pnu);
+create index asset_value_pnu_idx on asset_value(pnu);
+create index asset_yjgp_lands_pnu_idx on asset_yjgp_lands(pnu);
+create index asset_yjgp_merged_pnu_idx on asset_yjgp_merged(pnu);
+create index asset_jimok_pnu_idx on asset_jimok(pnu);
+
+update asset a set bld_data = (select abd.jsonb_agg from asset_bld_data abd where abd.pnu=a.pnu);
+select count(*) from asset where bld_data is not null;
+
+select jsonb_build_object(
+'rst', jsonb_build_object(
+    'rst_list', (select array_agg from asset_rst_lands arl where arl.pnu = a.pnu), 
+    'rst_merged', (select get_landrst_merged from asset_rst_merged arm where arm.pnu=a.pnu)),
+'jimok', (select jsonb_build_object from asset_jimok aj where aj.pnu=a.pnu),
+'yjgp', jsonb_build_object(
+    'yjgp_list', (select jsonb_agg(yjgp) from asset_yjgp_lands ayl where ayl.pnu in (select unnest(a.pnus))),
+    'yjgp_merged', (select yjgp from asset_yjgp_merged aym where aym.pnu=a.pnu))
+) from asset a;
+
+update asset a set lands_data = jsonb_build_object(
+'rst', jsonb_build_object(
+    'rst_list', (select array_agg from asset_rst_lands arl where arl.pnu = a.pnu), 
+    'rst_merged', (select get_landrst_merged from asset_rst_merged arm where arm.pnu=a.pnu)),
+'jimok', (select jsonb_build_object from asset_jimok aj where aj.pnu=a.pnu),
+'yjgp', jsonb_build_object(
+    'yjgp_list', (select jsonb_agg(yjgp) from asset_yjgp_lands ayl where ayl.pnu in (select unnest(a.pnus))),
+    'yjgp_merged', (select yjgp from asset_yjgp_merged aym where aym.pnu=a.pnu))
+);
+
