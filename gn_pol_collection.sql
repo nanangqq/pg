@@ -728,7 +728,7 @@ select jsonb_build_object(
 'yjgp', jsonb_build_object(
     'yjgp_list', (select jsonb_agg(yjgp) from asset_yjgp_lands ayl where ayl.pnu in (select unnest(a.pnus))),
     'yjgp_merged', (select yjgp from asset_yjgp_merged aym where aym.pnu=a.pnu))
-) from asset a;
+) from asset a; -- 건물 데이터 컬럼값 입력 
 
 update asset a set lands_data = jsonb_build_object(
 'rst', jsonb_build_object(
@@ -736,7 +736,79 @@ update asset a set lands_data = jsonb_build_object(
     'rst_merged', (select get_landrst_merged from asset_rst_merged arm where arm.pnu=a.pnu)),
 'jimok', (select jsonb_build_object from asset_jimok aj where aj.pnu=a.pnu),
 'yjgp', jsonb_build_object(
-    'yjgp_list', (select jsonb_agg(yjgp) from asset_yjgp_lands ayl where ayl.pnu in (select unnest(a.pnus))),
+    'yjgp_list', (select jsonb_agg(jsonb_build_object( ayl.pnu, ayl.yjgp )) from asset_yjgp_lands ayl where ayl.pnu in (select unnest(a.pnus))),
     'yjgp_merged', (select yjgp from asset_yjgp_merged aym where aym.pnu=a.pnu))
-);
+); -- 토지 데이터 컬럼값 입력 
+
+select (case when substring(value_str, 1,1)='n' then null else value_str end) from asset_value;
+update asset a set asset_land_est_value = (select (case when substring(value_str, 1,1)='n' then null else value_str end) from asset_value av where av.pnu=a.pnu); -- 추정가 임시값 입력 
+
+-- python function tmplet
+create or replace function func_name(param jsonb[]) returns float4
+as $$
+import json
+$$ LANGUAGE plpython3u
+immutable
+RETURNS NULL ON NULL INPUT;
+
+
+-- 토지면적 null 값 보정 
+select count(*) from asset where asset_area is null;
+select lu_area_dist from asset where asset_area is null;
+
+
+create or replace function get_areas_from_area_dist(area_dist jsonb) returns float4
+as $$
+import json
+ad = json.loads(area_dist)
+return sum(ad.values())
+$$ LANGUAGE plpython3u
+immutable
+RETURNS NULL ON NULL INPUT;
+
+select get_areas_from_area_dist(lu_area_dist), lu_area_dist from asset where asset_area is null;
+
+update asset a set asset_area = get_areas_from_area_dist(lu_area_dist) where asset_area is null;
+
+
+-- asset value 숫자 값으로 수정
+-- select (select from asset pnu from asset_value av;
+create index asset_value2_pnu_idx on asset_value2(pnu);
+select count(*) from asset_value2 where land_value is null;
+update asset a set asset_land_est_value = (select av.land_value from asset_value2 av where av.pnu=a.pnu); -- 추정가 임시값 입력 - 숫자 데이터로 변경 
+select asset_land_est_value from asset;
+
+-- 토지 추정가 업데이트 - 현웅님이 최종으로 구한 배율(0410)로 가격 산출 
+create index asset_value3_pnu_idx on asset_value3(pnu);
+select count(*) from asset_value3 where land_value is null;
+update asset a set asset_land_est_value = (select av.land_value from asset_value3 av where av.pnu=a.pnu); -- 추정가 임시값 입력 - 숫자 데이터로 변경 
+
+
+select pnu, pnus from asset;
+
+select pnu,  from asset;
+
+-- 거래사례 히스토리 데이터 자산테이블에 업데이트
+create index asset_deals_hist_pnu_idx on asset_deals_history(pnu);
+update asset a set deals_history = (select adh.history from asset_deals_history adh where adh.pnu=a.pnu);
+
+-- 건물신축 히스토리 데이터 자산테이블에 업데이트
+create index asset_bld_hist_pnu_idx on asset_bld_history(pnu);
+update asset a set bld_history = (select abh.jsonb_agg from asset_bld_history abh where abh.pnu=a.pnu);
+
+-- 히스토리 api 쿼리 테스트 
+select bld_history, deals_history, bld_data from asset where pnu='1168010600109450010';
+
+-- 건물단가 test data update
+create index asset_building_est_pnu_idx on asset_building_estimate(pnu);
+update asset a set bld_estimate = (select abe.estimate from asset_building_estimate abe where abe.pnu=a.pnu);
+
+-- 대치동 유사 거래사례 데이터 업데이트 
+create index asset_sim_deals_dch_pnu_idx on asset_sim_deals_daechi(pnu);
+update asset a set sim_deals = (select asdd.sim_deals from asset_sim_deals_daechi asdd where asdd.pnu=a.pnu);
+
+drop table test;
+create table test(pnu text, price int4);
+
+insert into test(pnu, price) values ('1168010600109450010', 1), ('1168010600109450010', 2), ('1168010600109450010', 3);
 

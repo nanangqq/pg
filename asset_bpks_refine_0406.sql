@@ -408,6 +408,9 @@ select pnu, get_landrst_merged((select array_agg(jsonb_build_object(llge.pnu, ar
 
 create table asset_rst_merged as select pnu, get_landrst_merged((select array_agg(jsonb_build_object(llge.pnu, array_agg)) from lot_landuse_gn_ext llge where llge.pnu in (select unnest(a.pnus)))) from asset a;
 
+select distinct ll.landuse_nm from lot_landuse ll where pnu like '11680%';
+select distinct ll.state_nm from lot_landuse ll where pnu like '11680%';
+select ll.state_nm from lot_landuse ll where pnu like '11680%' and state_nm is null;
 
 -- 건물정보
 create or replace function get_own(rgst_typ_nm text) returns text
@@ -451,6 +454,183 @@ create table asset_bld_data as select pnu, (select jsonb_agg( jsonb_build_object
 
 select distinct rgst_typ_nm from building_pyo2 bp ;
 
+select * from building_pyojebu_gn bpg where approval_dt/10000000<1 ;
+
+select * from building_pyojebu_gn bpg where approval_dt is null ;
 
 
+-- 건물 히스토리(허가, 착공, 사용승인 )
+select tnt(permit_dt), tnt(const_dt) from building_pyojebu_gn bpg;
 
+create or replace function tnt(txt text) returns text
+as $$
+t = txt.replace(' ','')
+return str(int(float(t)))
+$$ LANGUAGE plpython3u
+immutable
+RETURNS NULL ON NULL INPUT;
+
+create materialized view permit_date as select pnu, bld_nm, adr_bsc, lot_ar, tnt(permit_dt) from building_pyojebu_gn bpg where length(tnt(permit_dt))<8;
+select count(*) from permit_date; -- 147 개 
+select * from permit_date;
+select * from permit_date where length(tnt)<4; -- 6개 19, 200 => 없는셈..
+select * from permit_date where length(tnt)=4; -- 23개 년도 
+select * from permit_date where length(tnt)=5; -- 3개 년+월 2개, 20020 1개 
+select * from permit_date where length(tnt)=6; -- 84개 년+월 (뒷 두자리가 12보다 크면 월+일로)
+select * from permit_date where length(tnt)=7; -- 31개 각각 다르게 따져야 할듯??
+select count(*) from building_pyojebu_gn bpg where tnt(permit_dt) is null; -- 3081 개 
+select count(*) from building_pyojebu_gn bpg where length(tnt(permit_dt))=8; -- 21347 개 
+select count(*) from building_pyojebu_gn bpg where length(tnt(permit_dt))>8; -- 0 개 
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(permit_dt), substring(tnt(permit_dt),5,2) from building_pyojebu_gn bpg where length(tnt(permit_dt))=8 and cast(substring(tnt(permit_dt),5,2) as integer)>12;
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(permit_dt), substring(tnt(permit_dt),7,2) from building_pyojebu_gn bpg where length(tnt(permit_dt))=8 and cast(substring(tnt(permit_dt),7,2) as integer)>31;
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(permit_dt), substring(tnt(permit_dt),5,2) from building_pyojebu_gn bpg where length(tnt(permit_dt))=8 and cast(substring(tnt(permit_dt),5,2) as integer)<1;
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(permit_dt), substring(tnt(permit_dt),7,2) from building_pyojebu_gn bpg where length(tnt(permit_dt))=8 and cast(substring(tnt(permit_dt),7,2) as integer)<1;
+
+select count(*) from building_pyojebu_gn bpg where tnt(const_dt) is null; -- 7776 개 
+select count(*) from building_pyojebu_gn bpg where length(tnt(const_dt))=8; -- 15782 개 
+select count(*) from building_pyojebu_gn bpg where length(tnt(const_dt))>8; -- 0 개 
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt), substring(tnt(const_dt),5,2) from building_pyojebu_gn bpg where length(tnt(const_dt))=8 and cast(substring(tnt(const_dt),5,2) as integer)>12;
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt), substring(tnt(const_dt),7,2) from building_pyojebu_gn bpg where length(tnt(const_dt))=8 and cast(substring(tnt(const_dt),7,2) as integer)>31;
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt), substring(tnt(const_dt),5,2) from building_pyojebu_gn bpg where length(tnt(const_dt))=8 and cast(substring(tnt(const_dt),5,2) as integer)<1;
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt), substring(tnt(const_dt),7,2) from building_pyojebu_gn bpg where length(tnt(const_dt))=8 and cast(substring(tnt(const_dt),7,2) as integer)<1;
+select count(*) from building_pyojebu_gn bpg where length(tnt(const_dt))<8; -- 1017 개 
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt) from building_pyojebu_gn bpg where length(tnt(const_dt))<8;
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt) from building_pyojebu_gn bpg where length(tnt(const_dt))=1; -- 1개 0
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt) from building_pyojebu_gn bpg where length(tnt(const_dt))=2; -- 16개 19 
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt) from building_pyojebu_gn bpg where length(tnt(const_dt))=3; -- 0개 
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt) from building_pyojebu_gn bpg where length(tnt(const_dt))=4; -- 163개 년도 
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt) from building_pyojebu_gn bpg where length(tnt(const_dt))=5; -- 20개 년+월로 추정, 1개만 35377 이상값 
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt), substring(tnt(const_dt),5,2) from building_pyojebu_gn bpg where length(tnt(const_dt))=6; -- 793개 년+월로 추정 (뒷 두자리가 12보다 크면,,, 월+일로 ,,)
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt), substring(tnt(const_dt),5,2) from building_pyojebu_gn bpg where length(tnt(const_dt))=6 and cast(substring(tnt(const_dt),5,2) as integer)>12; -- 793개 년+월로 추정 (뒷 두자리가 12보다 크면,,, 월+일로 ,,)
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt), substring(tnt(const_dt),5,2) from building_pyojebu_gn bpg where length(tnt(const_dt))=6 and cast(substring(tnt(const_dt),5,2) as integer)<1; -- 793개 년+월로 추정 (뒷 두자리가 12보다 크면,,, 월+일로 ,,)
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt) from building_pyojebu_gn bpg where length(tnt(const_dt))=6 and substring(tnt(const_dt), 1, 1) not in ('1','2') ; -- 1,2 로 시작하지 않는 값 없음 
+select pnu, bld_nm, adr_bsc, lot_ar, tnt(const_dt) from building_pyojebu_gn bpg where length(tnt(const_dt))=7; -- 24개.. 이상함... 종류별로 따져서 입력해야 할듯,, 
+
+create table asset_bld_history as
+select a.pnu, (select jsonb_agg(jsonb_build_object(mgm_bldrgst_pk,jsonb_build_object('approval_dt', approval_dt, 'permit_dt', tnt(permit_dt), 'const_dt', tnt(const_dt)))) from building_pyojebu_gn bpg where bpg.mgm_bldrgst_pk in (select unnest(a.coalesce))) from asset_bpks_merged a; 
+
+select approval_dt from building_pyojebu_gn bpg where length((cast(approval_dt as text)))=7;
+
+select count(*) from building_pyojebu_gn bpg where approval_dt is null;
+select count(*) from building_pyojebu_gn bpg where length((cast(approval_dt as text)))>8;
+select approval_dt, substring(cast(approval_dt as text), 5, 2) from building_pyojebu_gn bpg where length(cast(approval_dt as text))=8 and cast(substring(cast(approval_dt as text),5,2) as integer)>12;
+select approval_dt, substring(cast(approval_dt as text), 7, 2) from building_pyojebu_gn bpg where length(cast(approval_dt as text))=8 and cast(substring(cast(approval_dt as text),7,2) as integer)>31;
+
+select pnu, approval_dt, const_dt, permit_dt from building_pyojebu_gn where approval_dt is null and const_dt is not null;
+
+-- 거래 히스토리 
+create table asset_deals_history(
+pnu text,
+history jsonb
+);
+
+-- 지하철역 
+CREATE TABLE gn_subways (
+  id SERIAL PRIMARY KEY,
+  geom geometry(geometry, 4326),
+  name text,
+  line text
+);
+create index subways_spt_idx on gn_subways using gist(geom);
+
+select st_buffer(psb.geom, 0.05) from pol_sgg_bounds psb where psb."ADM_SECT_C" ='11680';
+
+drop table gn_subways_merged ;
+create table gn_subways_merged as
+select geom, replace(names[1], $$'$$, '')  as name, lines from (select geom, array_agg(name) as names, array_agg(line) as lines from gn_subways where st_intersects(geom, (select st_buffer(psb.geom, 0.05) from pol_sgg_bounds psb where psb."ADM_SECT_C" ='11680')) group by geom) t;
+--'
+;
+--
+
+create index gn_subways_spt_idx on gn_subways_merged using gist(geom);
+
+select st_buffer(geom, 0.02) from gn_subways_merged gsm where gsm.name='선릉';
+
+select * from gn_subways_merged where st_dwithin(geom, (select geom from gn_subways_merged gsm where gsm.name='선릉'), 0.02);
+
+select asset_pol, (select array_agg(name) from (select name from gn_subways_merged gsm where st_dwithin(gsm.geom, a.asset_pol, 0.02) limit 4) t) from asset a limit 100;
+
+drop function get_subways_dist(text);
+create or replace function get_subways_dist(asset_pnu text) returns jsonb[]
+as $$
+rec = plpy.execute("select array_agg(jsonb_build_object('name', name, 'dist', dist, 'lines', lines)) from (select name, lines, st_distance((select asset_pol from asset a where a.pnu='%s'), gsm.geom, true) as dist from gn_subways_merged gsm where st_dwithin((select asset_pol from asset a where a.pnu='%s'), gsm.geom, 0.02) order by st_distance((select asset_pol from asset a where a.pnu='%s'), gsm.geom, true) limit 4) t"%(asset_pnu, asset_pnu, asset_pnu))
+if rec[0]['array_agg'] and len(rec[0]['array_agg'])==4:
+    return rec[0]['array_agg']
+else:
+    rec = plpy.execute("select array_agg(jsonb_build_object('name', name, 'dist', dist, 'lines', lines)) from (select name, lines, st_distance((select asset_pol from asset a where a.pnu='%s'), gsm.geom, true) as dist from gn_subways_merged gsm where st_dwithin((select asset_pol from asset a where a.pnu='%s'), gsm.geom, 0.1) order by st_distance((select asset_pol from asset a where a.pnu='%s'), gsm.geom, true) limit 4) t"%(asset_pnu, asset_pnu, asset_pnu))
+    if rec[0]['array_agg'] and len(rec[0]['array_agg'])==4:
+        return rec[0]['array_agg']
+    else:
+        rec = plpy.execute("select array_agg(jsonb_build_object('name', name, 'dist', dist, 'lines', lines)) from (select name, lines, st_distance((select asset_pol from asset a where a.pnu='%s'), gsm.geom, true) as dist from gn_subways_merged gsm order by st_distance((select asset_pol from asset a where a.pnu='%s'), gsm.geom, true) limit 4) t"%(asset_pnu, asset_pnu))
+        return rec[0]['array_agg']
+
+$$ LANGUAGE plpython3u
+immutable
+RETURNS NULL ON NULL INPUT;
+
+select get_subways_dist(asset_pnu) from asset a limit 100;
+create table asset_subways_dists as select pnu, get_subways_dist(asset_pnu) from asset;
+
+
+-- 면적단가 
+select * from building_pyojebu_gn bpg where gf_ar is null;
+select floor_cnt, ungflr_cnt, bc_ar, gf_ar, far_gf_ar from building_pyojebu_gn bpg where gf_ar=0;
+select * from building_pyojebu_gn bpg where gf_ar<5;
+
+create or replace function get_gf_ar(gf_ar float8, bc_ar float8, far_gf_ar float8, floor_cnt int8, ungflr_cnt int8) returns float8
+as $$
+if gf_ar==0:
+    if far_gf_ar==0:
+        return (floor_cnt + ungflr_cnt*1.5)*bc_ar
+    else:
+        if bc_ar==0:
+            return far_gf_ar + ungflr_cnt*1.5*(far_gf_ar/floor_cnt)
+        else:
+            return far_gf_ar + ungflr_cnt*1.5*(bc_ar)
+else:
+    return gf_ar
+$$ LANGUAGE plpython3u
+immutable
+RETURNS NULL ON NULL INPUT;
+
+select get_gf_ar(gf_ar, bc_ar, far_gf_ar, floor_cnt, ungflr_cnt), floor_cnt, ungflr_cnt, bc_ar, gf_ar, far_gf_ar from building_pyojebu_gn bpg where gf_ar=0;
+
+select count(*) from building_pyojebu_gn bpg ;
+
+select pnu, 
+(case when st_intersects(a.asset_pol, (select pol from pols_gn_offices_zone_merged where name='A')) then 1 else 0 end) as type_a,  
+(case when st_intersects(a.asset_pol, (select pol from pols_gn_offices_zone_merged where name='B')) then 1 else 0 end) as type_b,
+(select array_agg(jsonb_build_object(mgm_bldrgst_pk, get_gf_ar(gf_ar, bc_ar, far_gf_ar, floor_cnt, ungflr_cnt))) from building_pyojebu_gn bpg where bpg.mgm_bldrgst_pk in (select unnest(coalesce) from asset_bpks_merged abm where abm.pnu=a.pnu)) as gr_ar_list,
+a.bl_area_dist,
+(select abd.jsonb_agg from asset_bld_data abd where abd.pnu=a.pnu) as bld_data
+from asset a;
+
+create index asset_bpks_pnu_idx on asset_bpks_merged(pnu);
+create index asset_bld_dat_pnu_idx on asset_bld_data(pnu);
+
+create table asset_building_estimate(
+pnu text, 
+estimate jsonb
+);
+
+
+-- 랭킹 연산 테스트
+select count(*) from pol_seoul_lands_gn_mat; 
+create table gn_land_points_all as select pnu, st_centroid(geom) from pol_seoul_lands_gn_mat pslgm ;
+
+-- 지구단위계획 여부
+select pnu, st_intersects(geom, (select jd_merged from jd_merged_0420)) from gnlands2;
+update gnlands2 g set jd_check = st_intersects(g.geom, (select jd_merged from jd_merged_0420));
+
+select count(*) from gn_land_points_all glpa ;
+select count(*) from lot_information_gn_mat ligm ;
+
+create index gn_points_pnu_idx on gn_land_points_all(pnu);
+select count(*) from (select pnu, st_intersects((select glpa.geom from gn_land_points_all glpa where glpa.pnu=li.pnu), (select jd_merged from jd_merged_0420)) jd_check from lot_information_gn_mat li) t where t.jd_check is null;
+
+create table gn_lands_jdcheck as select pnu, st_intersects((select glpa.geom from gn_land_points_all glpa where glpa.pnu=li.pnu), (select jd_merged from jd_merged_0420)) jd_check from lot_information_gn_mat li;
+update gn_lands_jdcheck set jd_check=false where jd_check is null;
+
+-- 집합건물 유닛구성 데이터
+select * from building_pyojebu_gn bpg where rgst_typ_nm ='집합';
+select count(*) from building_pyojebu_gn bpg where rgst_typ_nm ='집합';
