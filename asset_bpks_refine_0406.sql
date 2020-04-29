@@ -634,3 +634,55 @@ update gn_lands_jdcheck set jd_check=false where jd_check is null;
 -- 집합건물 유닛구성 데이터
 select * from building_pyojebu_gn bpg where rgst_typ_nm ='집합';
 select count(*) from building_pyojebu_gn bpg where rgst_typ_nm ='집합';
+
+select count(mgm_bldrgst_pk) from building_pyojebu_gn;
+select count(mgm_bldrgst_pk) from building_busok_gn bbg;
+
+create table asset_coll_units_data(
+pnu text,
+coll_units_data jsonb
+);
+create index asset_cud_pnu_idx on asset_coll_units_data(pnu);
+
+-- 지하철 인원수 데이터 
+select name, (select count(*) from metro_user_counts muc where muc.station = gsm.name) from gn_subways_merged gsm;
+
+drop table asset_subways_dists2; 
+create table asset_subways_dists2 as select pnu, 
+(case 
+when (select count(*) from gn_subways_merged gsm where st_intersects(st_buffer(a.asset_pol, 0.015), gsm.geom))>=4
+then (select array_agg(jsonb_build_object('name', gsm."name", 'dist', st_distance(a.asset_pol, gsm.geom, true), 'lines', gsm.lines )) from gn_subways_merged gsm where st_intersects(st_buffer(a.asset_pol, 0.015), gsm.geom))
+when (select count(*) from gn_subways_merged gsm where st_intersects(st_buffer(a.asset_pol, 0.03), gsm.geom))>=4
+then (select array_agg(jsonb_build_object('name', gsm."name", 'dist', st_distance(a.asset_pol, gsm.geom, true), 'lines', gsm.lines)) from gn_subways_merged gsm where st_intersects(st_buffer(a.asset_pol, 0.03), gsm.geom))
+when (select count(*) from gn_subways_merged gsm where st_intersects(st_buffer(a.asset_pol, 0.1), gsm.geom))>=4
+then (select array_agg(jsonb_build_object('name', gsm."name", 'dist', st_distance(a.asset_pol, gsm.geom, true), 'lines', gsm.lines)) from gn_subways_merged gsm where st_intersects(st_buffer(a.asset_pol, 0.1), gsm.geom))
+else (select array_agg(jsonb_build_object('name', gsm."name", 'dist', st_distance(a.asset_pol, gsm.geom, true), 'lines', gsm.lines)) from gn_subways_merged gsm )
+end)
+from asset a;
+
+select count(distinct asset_pnu) from asset;
+select count(*) from asset
+
+select count(distinct asset_pnu) from asset_subways_dists2 asd; 
+
+select count(pnu) from asset_subway;
+select count(distinct pnu) from asset_subway;
+select pnu, count(*) from asset_subway group by pnu;
+
+-- 유사 거래사례(토지, 건물) 업데이트 
+
+-- 집합건물 추정가 업데이트 
+
+select count(*) from "asset_jiphap_unit_module 1";
+select count(distinct pnu) from "asset_jiphap_unit_module 1";
+
+select count(distinct pnu) from "asset_jiphap_unit_module 1 statics";
+
+select count(distinct pnu) from "asset_jiphap_unit_module 2";
+
+select * from "asset_jiphap_unit_module 2" where use <> '공동주택';
+
+select count(distinct pnu) from "asset_jiphap_unit_module 1 statics" aj where aj.pnu not in (select pnu from asset);
+
+create index ajum1_pnu on 
+

@@ -812,3 +812,40 @@ create table test(pnu text, price int4);
 
 insert into test(pnu, price) values ('1168010600109450010', 1), ('1168010600109450010', 2), ('1168010600109450010', 3);
 
+-- 집합건물 유닛구성 데이터 업데이트 
+create index asset_cud_pnu_idx on asset_coll_units_data(pnu);
+ALTER TABLE asset ADD coll_units_data jsonb NULL;
+update asset a set coll_units_data = (select acud.coll_units_data from asset_coll_units_data acud where acud.pnu = a.pnu);
+
+select count(*) from asset where coll_units_data is not null;
+
+-- 지하철역 데이터 업데이트 
+create index asset_subway_pnu_idx on asset_subway(pnu);
+ALTER TABLE asset ADD subways_data jsonb NULL;
+update asset a set subways_data = (select asb.subways_data from asset_subway asb where asb.pnu = a.pnu);
+
+select count(pnu) from asset_subway;
+select count(distinct pnu) from asset_subway;
+select pnu, count(*) from asset_subway group by pnu;
+
+select * from asset_subway as2 where pnu='1168010100107750007';
+
+select * from asset where subways_data is not null;
+
+select count(distinct pnu) from asset;
+
+
+create view daechi_dong as select asset_area, bld_data, bld_history from asset where pnu like '1168010600%';
+
+-- 강남 전체 일반 건축물 유사거래사례 데이터 업데이트 
+create index asset_sim_d_pnu_idx on asset_sim_deals_bld(pnu);
+ALTER TABLE asset ADD sim_deals_bld jsonb NULL;
+update asset a set sim_deals_bld = (select asdb.sim_deals_bld from asset_sim_deals_bld asdb where asdb.pnu=a.pnu);
+
+-- 강남 전체 토지 유사거래사례 데이터 업데이트 
+create index asset_sim_d_land_pnu_idx on asset_sim_deals_land(pnu);
+ALTER TABLE asset ADD sim_deals_land jsonb NULL;
+update asset a set sim_deals_land = (select asdl.sim_deals_bld from asset_sim_deals_land asdl where asdl.pnu=a.pnu);
+
+select st_area(geom, true) from _land where id=concat('land_', '1168010600109450010');
+select count(*) from lu_areas_gn_lands_bu laglb ;
