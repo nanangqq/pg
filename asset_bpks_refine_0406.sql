@@ -54,6 +54,19 @@ update asset_bpks_comb_tmp set asset_pnu = '1168011500101810002' where pnu_main=
 
 select array_cat( (select bpks from asset_bpks_comb_tmp abct where pnu_main = '1168010300101670004'), (select bpks from asset_bpks_comb_tmp abct where pnu_main = '1168010300101670005') );
 
+-- 1168010300101670004
+-- 1168010300101670005
+-- 1168010300111840004
+-- 1168010300111840022
+-- 1168010400101330003
+-- 1168010400101340015
+-- 1168011000104430000
+-- 1168011000104620000
+-- 1168011500101810002
+-- 1168011500102010005
+-- 1168011800101160001
+-- 1168011800108950008  20/06 기준 데이터 => 20/03때와 같은 pnu들만 추려짐
+
 update asset_bpks_comb_tmp set bpks_merged = array_cat( (select bpks from asset_bpks_comb_tmp abct where pnu_main = '1168010300101670004'), (select bpks from asset_bpks_comb_tmp abct where pnu_main = '1168010300101670005') )
 where pnu_main in ('1168010300101670004','1168010300101670005');
 
